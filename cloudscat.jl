@@ -36,8 +36,7 @@ const co = constants
     # Scatering particle density
     nscat = 100 * co.centi^-3
 
-    # Mean-free-path between scatterings
-    # Koshak uses half this but I do not understand why
+    # Mean-free-path between scattering events
     Λ = 1 / (Qext * π * radius^2 * nscat)
 
     # Cloud limits
@@ -97,7 +96,7 @@ hgμ(g, ξ) = (1 + g^2 - ((1 - g^2) / (1 + g * (2 * ξ - 1)))^2) / (2 * g)
 # Travel distance from a random variable ξ in (0, 1)
 travel(Λ, ξ) = -Λ * log(ξ)
 
-# A function to checkk if the particle is inside the cloud.
+# A function to check if the particle is inside the cloud.
 incloud(r, params) = (r[3] > params.cloud_base && r[3] < params.cloud_top)
 
 
@@ -284,7 +283,7 @@ function randsphere!(μ)
 end
 
 """
-Check one particle and one observer and adds the particle's contribution to
+Check one particle and one observer and add the particle's contribution to
 the timeline and image.
 
 NOTE: Absorption is not considered here: it would simply add a factor ω₀
@@ -293,10 +292,10 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     @unpack cloud_top, g, Λ, N = params
     
     # Distance to the observer
-    sobs = norm(o.r - r)
+    sobs = norm(o.r .- r)
     
     # Director to the observer
-    μobs = (o.r - r) ./ sobs
+    μobs = (o.r .- r) ./ sobs
 
     μscat = μ ⋅ μobs
     
