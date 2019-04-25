@@ -384,7 +384,9 @@ Propagate a single particle given its position and direction.
 end
 
 
-""" Choose the type of scattering event, depending on the altitude z. """
+""" 
+Choose the type of scattering event, depending on the altitude z. 
+"""
 @inline function choosescat(z, params::Params)
     @unpack cloud_base, cloud_top, ν_cloud, ν_above = params
     @unpack νMie, νRay_base, νRay_top, H = params
