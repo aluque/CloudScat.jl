@@ -426,10 +426,10 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     @unpack cloud_top, g, N, H, σ, nground, νMie = params
     
     # Distance to the observer
-    sobs = norm(o.r .- r)
+    sobs = norm(o.r - r)
     
     # Director to the observer
-    μobs = (o.r .- r) ./ sobs
+    μobs = (o.r - r) / sobs
 
     μscat = μ ⋅ μobs
 
