@@ -59,7 +59,7 @@ const co = constants
     σ = 3e-30
 
     # Air density at the ground
-    nground = 7.767e25
+    nground = 2.6748e25
 
     # Atmospheric scale height
     H = 7.2e3
@@ -181,7 +181,9 @@ function main(args)
         
     params = Params(;Dict(Symbol(k)=>v for (k, v) in paramdict)...)
 
+    println(BOLD(GREEN_FG(format("[{}] Cloud-scattering code by A. Luque, IAA-CSIC (aluque@iaa.es)", Dates.now()))))
     println(BOLD(GREEN_FG(format("[{}] cloudscat.jl {}", Dates.now(), infile))))
+
     println()
     for field in fieldnames(Params)
         printfmtln("{:<45s}: {}",
