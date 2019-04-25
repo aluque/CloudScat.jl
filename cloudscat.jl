@@ -171,7 +171,14 @@ function main(args)
     input = YAML.load_file(infile)
 
     paramdict = input["parameters"]
-    
+
+    # Allow a simple way to include other definitions
+    includes = [YAML.load_file(fname) for fname in get(input, "includes", [])]
+
+    for include in includes
+        merge!(paramdict, get(include, "parameters", Dict()))
+    end
+        
     params = Params(;Dict(Symbol(k)=>v for (k, v) in paramdict)...)
 
     println(BOLD(GREEN_FG(format("[{}] cloudscat.jl {}", Dates.now(), infile))))
@@ -185,11 +192,18 @@ function main(args)
     ## Init all observers
     observers = Vector{Observer}()
         
-    for obsdata in input["observers"]
+    for obsdata in get(input, "observers", [])
         obs = Observer(obsdata)
         push!(observers, obs)
     end
-
+    for include in includes
+        for obsdata in get(include, "observers", [])
+            obs = Observer(obsdata)
+            push!(observers, obs)
+        end
+    end
+    
+    
     ## Init all photons
     p = Population(params.N)
     initphotons!(p, params)
