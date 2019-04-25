@@ -19,7 +19,7 @@ using ProgressMeter
 include("constants.jl")
 const co = constants
 
-@with_kw struct Params @deftype Float64
+@with_kw mutable struct Params @deftype Float64
     # Cloud limits
     cloud_base = 7 * co.kilo
     cloud_top  = 15 * co.kilo 
@@ -64,20 +64,27 @@ const co = constants
     # Atmospheric scale height
     H = 7.2e3
 
-    # Max. Frequency of Rayleigh scattering events
-    νRay = (σ * nground * exp(-cloud_base / H))
+    # Frequency of Rayleigh scattering events at the cloud base
+    νRay_base = (σ * nground * exp(-cloud_base / H))
 
-    # Max. Frequency of Total scattering
-    ν = νRay + νMie
+    # Frequency of Rayleigh scattering events at the cloud top
+    νRay_top = (σ * nground * exp(-cloud_top / H))
+
+    # Max. Frequency of Total scattering inside the cloud
+    ν_cloud = νRay_base + νMie
+
+    # Max. Frequency of Total scattering above the cloud
+    ν_above = νRay_top
     
-    # Mean free path between collisions (Mie, Rayleigh and Null)
-    Λ = 1 / ν
+    # Mean free paths between collisions (Mie, Rayleigh and Null)
+    Λ_cloud = 1 / ν_cloud
+    Λ_above = 1 / ν_above
 
     # Maximum number of collisions per photon
     max_iter::Int64 = 1000000
     
     # Domain limit: photons above this height are discarded
-    domain_top = 40 * co.kilo
+    domain_top = 50 * co.kilo
 
     
     @assert Qext > 0
@@ -146,14 +153,13 @@ function μr(ξ)
     w^(1//3) - w^(-1//3)
 end
 
-# Travel distance from a random variable ξ in (0, 1)
-travel(Λ, ξ) = -Λ * log(ξ)
+# A function to check if the particle is inside the cloud
+incloud(z::Real, params) = (z > params.cloud_base && z < params.cloud_top)
+incloud(r::AbstractArray, params) = incloud(r[3], params)
 
 # A function to check if the particle is inside the domain.
-incloud(r, params) = (r[3] > params.cloud_base && r[3] < params.cloud_top)
-
-# A function to check if the particle is inside the domain.
-indomain(r, params) = (r[3] > params.cloud_base && r[3] < params.domain_top)
+indomain(z::Real, params) = (z > params.cloud_base && z < params.domain_top)
+indomain(r::AbstractArray, params) = indomain(r[3], params)
 
 
 function main(args)
@@ -287,16 +293,14 @@ Iterate over all particles in the population p and advance them, including
 their eventual observation.
 """
 function iterate!(p::Population, observers::Vector{Observer}, params::Params)
-    # Active particles
-    @unpack Λ = params
-    
+    # Active particles    
     c::Int64 = 0
     @inbounds for i in 1:p.n
         p.isactive[i] || continue
         c += 1
 
         # Propagate
-        l = travel(Λ, rand())
+        l = travel(p.r[3, i], p.μ[3, i], params)
 
         # Writing the loop is significantly faster than broadcasting
         # p.r[:, i] .+= (@view p.μ[:, i]) .* l
@@ -342,18 +346,71 @@ function randsphere!(μ)
     μ[3] = u
 end
 
+"""
+Propagate a single particle given its position and direction.
+"""
+@fastmath function travel(z, μz, params::Params)
+    @unpack cloud_top, ν_cloud, Λ_cloud, ν_above, Λ_above = params
+
+    # Select the optical depth to travel
+    τ = -log(rand())
+    
+    if incloud(z, params) && μz > 0
+        # τ required to exit the cloud
+        τ0 = ν_cloud * (cloud_top - z) / μz
+        if τ < τ0
+        # Stay in the cloud
+            return Λ_cloud * τ
+        else
+            return Λ_cloud * τ0 + Λ_above * (τ - τ0)
+        end
+    end
+    
+    if incloud(z, params) && μz <= 0
+        # Stay in the cloud or leave it from below, in which case the photon
+        # is removed.
+        return Λ_cloud * τ
+    end
+
+    # The photon is outside the cloud.
+    if μz > 0
+        # Propagate upwards
+        return Λ_above * τ
+    end
+
+    # The photon is moving downwards and may enter the cloud
+    τ0 = ν_above * (cloud_top - z) / μz
+    if τ < τ0
+        return Λ_above * τ
+    else
+        return Λ_above * τ0 + Λ_cloud * (τ - τ0)
+    end
+
+end
+
 
 """ Choose the type of scattering event, depending on the altitude z. """
-function choosescat(z, params::Params)
-    @unpack cloud_base, ν, νMie, νRay, H = params
-
-    ξ = rand() * ν
-    if ξ <= νMie
-        return Mie
-    elseif ξ <= (νMie + νRay * exp(-(z - cloud_base) / H))
-        return Rayleigh
+@inline function choosescat(z, params::Params)
+    @unpack cloud_base, cloud_top, ν_cloud, ν_above = params
+    @unpack νMie, νRay_base, νRay_top, H = params
+    indomain(z, params) || return Null
+    
+    if incloud(z, params)
+        ξ = rand() * ν_cloud
+        if ξ <= νMie
+            return Mie
+        elseif ξ <= (νMie + νRay_base * exp(-(z - cloud_base) / H))
+            return Rayleigh
+        else
+            return Null
+        end
     else
-        return Null
+        ξ = rand() * ν_above
+        if ξ < νRay_top * exp(-(z - cloud_top) / H)
+            return Rayleigh
+        else
+            return Null
+        end
     end
 end
 
@@ -364,8 +421,9 @@ the timeline and image.
 
 NOTE: Absorption is not considered here: it would simply add a factor ω₀
 """
-@inline @fastmath function observeone!(o::Observer, p, r, μ, t, params::Params)
-    @unpack cloud_top, g, Λ, N = params
+@inline @fastmath function observeone!(o::Observer, p,
+                                       r, μ, t, params::Params)
+    @unpack cloud_top, g, N, H, σ, nground, νMie = params
     
     # Distance to the observer
     sobs = norm(o.r .- r)
@@ -374,10 +432,18 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     μobs = (o.r .- r) ./ sobs
 
     μscat = μ ⋅ μobs
-    
-    # Find the distance to the cloud top
-    s = sobs * (cloud_top - r[3]) / (o.r[3] - r[3])
 
+    # Optical depth to the observer from Rayleigh scattering
+    τ = σ * nground * H / μobs[3] * (exp(-r[3] / H) - exp(-o.r[3] / H))
+
+    if incloud(r, params)
+        # Find the distance to the cloud top
+        s = sobs * (cloud_top - r[3]) / (o.r[3] - r[3])
+
+        # Depth due to Mie
+        τ += s * νMie
+    end
+    
     # The probability dens that the photon reaches the cloud top w/o scattering
     # NB: p(μ) gives the scattering probablity per unit solid angle,
     # imagine that the photon is a super-particle representing N real photons. Now
@@ -385,8 +451,8 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     # - the surface at the observer subtended by this solid angle is s^2 dΩ.
     # So the number of photons per unit surface at the observer is
     # N p(μ) / s^2.  To this we have to add an attenuation factor exp(-s / Λ).
-    f = p(g, μscat) * exp(-s / Λ) / (sobs^2 * N)
-
+    f = p(g, μscat) * exp(-τ) / (sobs^2 * N)
+    
     # Now find time of obervation if the particle manages to escape
     tobs = t + sobs / co.c
 
