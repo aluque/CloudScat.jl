@@ -102,16 +102,16 @@ end
 
 # Description of the photon population
 struct Population
-    n::Int64                 # Size of the population
-    r::Array{Float64, 2}     # Positions
-    μ::Array{Float64, 2}     # Directions
-    t::Vector{Float64}       # Time
-    isactive::Vector{Bool}   # Is active?
+    n::Int64                           # Size of the population
+    r::Vector{SVector{3, Float64}}     # Positions
+    μ::Vector{SVector{3, Float64}}     # Directions
+    t::Vector{Float64}                 # Time
+    isactive::Vector{Bool}             # Is active?
 end
 
 Population(n::Int64) = Population(n,
-                                  Array{Float64, 2}(undef, 3, n),
-                                  Array{Float64, 2}(undef, 3, n),
+                                  Vector{SVector{3, Float64}}(undef, n),
+                                  Vector{SVector{3, Float64}}(undef, n),
                                   Array{Float64, 1}(undef, n),
                                   Array{Bool, 1}(undef, n))
 
@@ -212,14 +212,15 @@ function save(fname, p::Population, observers::Vector{Observer},
             attrs(g)[String(field)] = getfield(params, field)
         end
 
-        g = g_create(file, "population")
         args = ("shuffle", (),
                 "deflate", 3)
 
-        g["r", args...] = p.r
-        g["mu", args...] = p.μ
-        g["t", args...] = p.t
-        g["isactive", args...] = p.isactive
+        # g = g_create(file, "population")
+
+        # g["r", args...] = p.r
+        # g["mu", args...] = p.μ
+        # g["t", args...] = p.t
+        # g["isactive", args...] = p.isactive
 
         for (i, obs) in enumerate(observers)
             g = g_create(file, format("obs{:05d}", i))
@@ -249,8 +250,8 @@ function initphotons!(p::Population, params::Params)
     @unpack source_altitude = params
 
     for i in 1:p.n
-        p.r[:, i] .= [0, 0, source_altitude]
-        randsphere!(@view p.μ[:, i])
+        p.r[i] = @SVector [0, 0, source_altitude]
+        p.μ[i] = randsphere()
         p.t[i] = 0.0
         p.isactive[i] = true
     end
@@ -300,32 +301,28 @@ function iterate!(p::Population, observers::Vector{Observer}, params::Params)
         c += 1
 
         # Propagate
-        l = travel(p.r[3, i], p.μ[3, i], params)
-
-        # Writing the loop is significantly faster than broadcasting
-        # p.r[:, i] .+= (@view p.μ[:, i]) .* l
-        for j in 1:3
-            p.r[j, i] += p.μ[j, i] * l
-        end
-
+        l = travel(p.r[i][3], p.μ[i][3], params)
+        
+        p.r[i] = p.r[i] + p.μ[i] * l
         p.t[i] += l / co.c
-
+        #@show p.r[i]
+        
         # Check if inside the domain
-        if !indomain((@view p.r[:, i]), params)
+        if !indomain(p.r[i], params)
             p.isactive[i] = false
             continue
         end
 
         # Choose scattering type
-        scat = choosescat(p.r[3, i], params)
+        scat = choosescat(p.r[i][3], params)
         
         # Accumulate observations
         for o in observers
-            @views observeone!(o, scat, p.r[:, i], p.μ[:, i], p.t[i], params)
+            observeone!(o, scat, p.r[i], p.μ[i], p.t[i], params)
         end
         
         # Scatter and check if absorbed
-        p.isactive[i] = scatterone!((@view p.μ[:, i]), scat, params)
+        p.μ[i], p.isactive[i] = scatterone(p.μ[i], scat, params)
     end
     c
 end
@@ -334,16 +331,14 @@ end
 """ 
 Samples points from the unitary sphere. 
 """
-function randsphere!(μ)
+function randsphere()
     ϕ = 2π * rand()
     sinϕ, cosϕ = sincos(ϕ)
     
     u = 2 * rand() - 1
     v = sqrt(1 - u^2)
-    
-    μ[1] = v * cosϕ
-    μ[2] = v * sinϕ
-    μ[3] = u
+
+    @SVector [v * cosϕ, v * sinϕ, u]
 end
 
 """
@@ -488,17 +483,16 @@ which is then overwritten.
 
 NB: This function breaks down if μ is directed exactly along z.
 """
-@inline @fastmath function scatterone!(μ, ::Type{Mie}, params)
+@inline @fastmath function scatterone(μ, ::Type{Mie}, params)
     @unpack ω₀, g = params
 
     # Return false if the particle is absorbed
-    rand() < ω₀ || return false
+    rand() < ω₀ || return μ, false
 
     ϕ = 2π * rand()
     cosθ = μhg(g, rand())
 
-    turn!(μ, cosθ, ϕ)
-    true
+    turn!(μ, cosθ, ϕ), true
 end
 
 
@@ -509,15 +503,14 @@ which is then overwritten.
 
 NB: This function breaks down if μ is directed exactly along z.
 """
-@inline @fastmath function scatterone!(μ, ::Type{Rayleigh}, params)
+@inline @fastmath function scatterone(μ, ::Type{Rayleigh}, params)
     ϕ = 2π * rand()
     cosθ = μr(rand())
 
-    turn!(μ, cosθ, ϕ)
-    true
+    turn!(μ, cosθ, ϕ), true
 end
 
-scatterone!(μ, ::Type{Null}, params) = true
+scatterone(μ, ::Type{Null}, params) = (μ, true)
 
 
 """ 
@@ -539,9 +532,7 @@ Change the unitary vector μ to a new one deviated with inclination θ and azimu
     μ1y = sinθ * b(μ[2],  μ[1], μ[3]) / s + μ[2] * cosθ
     μ1z = -s * sinθ * cosϕ + μ[3] * cosθ
 
-    μ[1] = μ1x
-    μ[2] = μ1y
-    μ[3] = μ1z
+    @SVector [μ1x, μ1y, μ1z]
 end
 
 
