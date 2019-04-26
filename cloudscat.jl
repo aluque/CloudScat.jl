@@ -26,6 +26,9 @@ const co = constants
 
     # Location of the source
     source_altitude = 8 * co.kilo
+
+    # Vertical extension of the source
+    source_extension = 0
     
     # Initial number of photons
     N::Int64 = 10000
@@ -263,9 +266,10 @@ end
 Initialize all photons according to the parameters
 """
 function initphotons!(p::Population, params::Params)
-    @unpack source_altitude = params
+    @unpack source_altitude, source_extension = params
 
     for i in 1:p.n
+        z = source_altitude + (rand() - 0.5) * source_extension
         p.r[i] = @SVector [0, 0, source_altitude]
         p.μ[i] = randsphere()
         p.t[i] = 0.0
