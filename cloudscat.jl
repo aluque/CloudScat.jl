@@ -14,10 +14,19 @@ using YAML
 using Crayons
 using Crayons.Box
 using Formatting
-using ProgressMeter
+using Logging
 
 include("constants.jl")
 const co = constants
+
+# Set up logging
+function fmt(level, _module, group, id, file, line)
+    return (:cyan, format("[{:<23}]", Dates.now()), "")
+end
+
+logger = ConsoleLogger(meta_formatter=fmt)
+global_logger(logger)
+
 
 @with_kw mutable struct Params @deftype Float64
     # Cloud limits
@@ -184,16 +193,13 @@ function main(args)
         
     params = Params(;Dict(Symbol(k)=>v for (k, v) in paramdict)...)
 
-    println(BOLD(GREEN_FG(format("[{}] Cloud-scattering code by A. Luque, IAA-CSIC (aluque@iaa.es)", Dates.now()))))
-    println(BOLD(GREEN_FG(format("[{}] cloudscat.jl {}", Dates.now(), infile))))
-
-    println()
-    for field in fieldnames(Params)
-        printfmtln("{:<45s}: {}",
-                   BOLD(YELLOW_FG(String(field))), getfield(params, field))
-    end
-    println()
-
+    @info string(BOLD(CYAN_FG("Cloud-scattering code by A. Luque, IAA-CSIC (aluque@iaa.es)")))
+    @info BOLD(CYAN_FG(format("cloudscat.jl {}", Dates.now(), infile)))
+    @info (string(BOLD(CYAN_FG("Input parameters\n"))) *
+           join([format("{:<45s}: {}",
+                        BOLD(YELLOW_FG(String(field))), getfield(params, field))
+                 for field in fieldnames(Params)], "\n"))
+    
     ## Init all observers
     observers = Vector{Observer}()
         
@@ -284,26 +290,17 @@ Run the MC simulation on a photon population and a collection of observers.
 function run!(p::Population, observers::Vector{Observer}, params::Params)    
     @unpack max_iter, N = params
     
-    prog = Progress(N, 5)
-
     for it in 1:max_iter
         actives = iterate!(p, observers, params)
         
         if actives == 0
-            ProgressMeter.finish!(prog)
             break
         end
-        if it % 100 == 0
-            update!(prog, N - actives,
-                    showvalues=[(:iterations, it),
-                                (:particles, actives)])
-        end
 
-        # Old style progress:
-        # if it % 1000 == 0            
-        #     println(BLUE_FG(format("[{:<23}]", Dates.now())),
-        #             "    iterations: $it; particles: $actives") 
-        # end
+        if it % 100 == 0            
+           @info(format("{} % completed", (100 * (N - actives) / N)),
+                 iterations=it, particles= actives) 
+        end
     end
 
 end
