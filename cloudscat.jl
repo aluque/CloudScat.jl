@@ -27,7 +27,12 @@ end
 logger = ConsoleLogger(meta_formatter=fmt)
 global_logger(logger)
 
+"""
+Structure to contain all simulation parameters.
 
+Although in the definition many of the parameters take reasonable default
+values it's best to set them reading a .yaml file as described in README.md.
+"""
 @with_kw mutable struct Params @deftype Float64
     # Cloud limits
     cloud_base = 7 * co.kilo
@@ -368,7 +373,7 @@ Propagate a single particle given its position and direction.
     τ = -log(rand())
     
     if incloud(z, params) && μz > 0
-        # τ required to exit the cloud
+        # Depth required to exit the cloud
         τ0 = ν_cloud * (cloud_top - z) / μz
         if τ < τ0
         # Stay in the cloud
