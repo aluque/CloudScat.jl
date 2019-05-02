@@ -1,6 +1,9 @@
-""" Light scattering by clouds
+""" 
+cloudscat.jl
 
-    Alejandro Luque, IAA-CSIC, 2019
+Light scattering by clouds
+
+Alejandro Luque, IAA-CSIC, 2019
 """
 module CloudScat
 
@@ -19,6 +22,15 @@ using ProgressMeter
 include("constants.jl")
 const co = constants
 
+
+"""
+    Params
+
+Structure to contain all simulation parameters.
+
+Although in the definition many of the parameters take reasonable default
+values it's best to set them reading a .yaml file as described in README.md.
+"""
 @with_kw mutable struct Params @deftype Float64
     # Cloud limits
     cloud_base = 7 * co.kilo
@@ -103,7 +115,12 @@ const co = constants
     @assert domain_top >= cloud_top
 end
 
-# Description of the photon population
+
+"""
+    Population
+
+Description of the photon population.
+"""
 struct Population
     n::Int64                           # Size of the population
     r::Vector{SVector{3, Float64}}     # Positions
@@ -112,12 +129,31 @@ struct Population
     isactive::Vector{Bool}             # Is active?
 end
 
+
+"""
+    Population(n)
+
+Create an uninitialized population structure with space to hold up to `n`
+photons.
+"""
 Population(n::Int64) = Population(n,
                                   Vector{SVector{3, Float64}}(undef, n),
                                   Vector{SVector{3, Float64}}(undef, n),
                                   Array{Float64, 1}(undef, n),
                                   Array{Bool, 1}(undef, n))
 
+
+"""
+    Observer
+
+Description of an observer.  An observer is located a some position `r` and
+collects photons, building 
+
+ * a timeline of arriving photons (`obs`) with a time resolution `δt`
+ * an image of the arriving directions of the photons (`img`) with cosine-angle
+   resolution `δμ` and field-of-view `μmax`. 
+   
+"""
 struct Observer
     r::SVector{3, Float64}   # Location of the observer
     δt::Float64              # Time-resolution of the detector
@@ -127,6 +163,26 @@ struct Observer
     img::Array{Float64, 2}   # Image array
 end
 
+
+"""
+    Observer(obsdata)
+
+Create a observer structure from a dictionary of observer properties.
+"""
+function Observer(obsdata::Dict{Any, Any})
+    μmax = sin(deg2rad(obsdata["fov"]))
+    δμ = 2 * μmax / obsdata["pixels"]
+    
+    obs = Observer(SVector(obsdata["shift"], 0,
+                           obsdata["altitude"]),
+                   obsdata["tsample"],
+                   δμ,
+                   μmax,
+                   zeros(obsdata["nsamples"]),
+                   zeros(obsdata["pixels"], obsdata["pixels"]))
+end
+
+
 # For the dynamical dispatch we define types of collisions but they
 # currently don't do anything
 abstract type ScatteringType end 
@@ -135,10 +191,10 @@ struct Rayleigh <: ScatteringType end
 struct Null <: ScatteringType end
 
 
-# Henyey-Greenstein phase function
+# Henyey-Greenstein phase function.
 phg(g, μ) = (1 / 4π) * (1 - g^2) / (1 + g^2 - 2 * g * μ)^(3/2)
 
-# Sampling from the HG phase function .
+# Sampling from the HG phase function.
 # Here ξ in a random variable uniformly distributed between 0 and 1
 μhg(g, ξ) = (1 + g^2 - ((1 - g^2) / (1 + g * (2 * ξ - 1)))^2) / (2 * g)
 
@@ -149,12 +205,13 @@ pr(μ) = (3 / 16π) * (1 + μ^2)
 pr(g, μ) = pr(μ)
 
 
-# Sampling from the Rayleigh phase function.  The PDF notes are wrong.
+# Sample from the Rayleigh phase function.  The PDF notes are wrong.
 function μr(ξ)
     z = 2 * (2ξ - 1)
     w = z + sqrt(z^2 + 1)
     w^(1//3) - w^(-1//3)
 end
+
 
 # A function to check if the particle is inside the cloud
 incloud(z::Real, params) = (z > params.cloud_base && z < params.cloud_top)
@@ -166,11 +223,45 @@ indomain(r::AbstractArray, params) = indomain(r[3], params)
 
 
 function main(args)
+    # Always use colors
     Crayons.force_color(true)
 
     infile = args[1]
+
+    # Print greetings
+    println(BOLD(GREEN_FG(format("[{}] Cloud-scattering code by A. Luque, IAA-CSIC (aluque@iaa.es)", Dates.now()))))
+    println(BOLD(GREEN_FG(format("[{}] cloudscat.jl {}", Dates.now(), infile))))
+
     outfile = splitext(infile)[1] * ".h5"
+    params, observers = readinput(infile)
+
+    # Print a list of parameters
+    println()
+    for field in fieldnames(Params)
+        printfmtln("{:<45s}: {}",
+                   BOLD(YELLOW_FG(String(field))), getfield(params, field))
+    end
+    println()
+
+    # Init all photons
+    p = Population(params.N)
+    initphotons!(p, params)
     
+    # Run the MC simulation
+    run!(p, observers, params)
+
+    # Save output
+    save(outfile, p, observers, params)    
+end
+
+
+"""
+    readinput(input)
+
+Read the input parameters and observer configuration from a .yaml file
+´infile´.
+"""
+function readinput(infile)    
     input = YAML.load_file(infile)
 
     paramdict = input["parameters"]
@@ -184,23 +275,16 @@ function main(args)
         
     params = Params(;Dict(Symbol(k)=>v for (k, v) in paramdict)...)
 
-    println(BOLD(GREEN_FG(format("[{}] Cloud-scattering code by A. Luque, IAA-CSIC (aluque@iaa.es)", Dates.now()))))
-    println(BOLD(GREEN_FG(format("[{}] cloudscat.jl {}", Dates.now(), infile))))
 
-    println()
-    for field in fieldnames(Params)
-        printfmtln("{:<45s}: {}",
-                   BOLD(YELLOW_FG(String(field))), getfield(params, field))
-    end
-    println()
-
-    ## Init all observers
+    # Init all observers
     observers = Vector{Observer}()
         
     for obsdata in get(input, "observers", [])
         obs = Observer(obsdata)
         push!(observers, obs)
     end
+
+    # Read observers also from files in includes: [...]
     for include in includes
         for obsdata in get(include, "observers", [])
             obs = Observer(obsdata)
@@ -208,19 +292,14 @@ function main(args)
         end
     end
     
-    
-    ## Init all photons
-    p = Population(params.N)
-    initphotons!(p, params)
-    
-    run!(p, observers, params)
-    save(outfile, p, observers, params)
-    
+    params, observers
 end
 
 
 """
-Save the population and observations into a h5 file.
+    save(fname, p, observers, params)
+
+Save the population and observations into a h5 file called `fname`.
 """
 function save(fname, p::Population, observers::Vector{Observer},
               params::Params)
@@ -263,7 +342,9 @@ end
 
 
 """ 
-Initialize all photons according to the parameters
+    initphotons!(p, params)
+
+Initialize all photons in a population `p` according to the parameters `params`.
 """
 function initphotons!(p::Population, params::Params)
     @unpack source_altitude, source_extension = params
@@ -279,6 +360,8 @@ end
 
 
 """
+    run!(p, observers, params)
+
 Run the MC simulation on a photon population and a collection of observers.
 """
 function run!(p::Population, observers::Vector{Observer}, params::Params)    
@@ -298,20 +381,15 @@ function run!(p::Population, observers::Vector{Observer}, params::Params)
                     showvalues=[(:iterations, it),
                                 (:particles, actives)])
         end
-
-        # Old style progress:
-        # if it % 1000 == 0            
-        #     println(BLUE_FG(format("[{:<23}]", Dates.now())),
-        #             "    iterations: $it; particles: $actives") 
-        # end
     end
-
 end
 
 
 """
-Iterate over all particles in the population p and advance them, including
-their eventual observation.
+    iterate!(p, observers, params)
+
+Iterate over all particles in the population `p` and advance them, including
+their eventual observation by `observers`.
 """
 function iterate!(p::Population, observers::Vector{Observer}, params::Params)
     # Active particles    
@@ -349,7 +427,9 @@ end
 
 
 """ 
-Samples points from the unitary sphere. 
+    randsphere()
+
+Sample points from the unitary sphere. 
 """
 function randsphere()
     ϕ = 2π * rand()
@@ -361,8 +441,12 @@ function randsphere()
     @SVector [v * cosϕ, v * sinϕ, u]
 end
 
+
 """
-Propagate a single particle given its position and direction.
+    travel(z, μz, params)
+
+Sample the travel distance a single particle given its position `z` and 
+z-component of its direction `μz`.
 """
 @fastmath function travel(z, μz, params::Params)
     @unpack cloud_top, ν_cloud, Λ_cloud, ν_above, Λ_above = params
@@ -371,7 +455,7 @@ Propagate a single particle given its position and direction.
     τ = -log(rand())
     
     if incloud(z, params) && μz > 0
-        # τ required to exit the cloud
+        # Depth required to exit the cloud
         τ0 = ν_cloud * (cloud_top - z) / μz
         if τ < τ0
         # Stay in the cloud
@@ -405,7 +489,9 @@ end
 
 
 """ 
-Choose the type of scattering event, depending on the altitude z. 
+    choosescat(z, params)
+
+Choose the type of scattering event, depending on the altitude `z`. 
 """
 @inline function choosescat(z, params::Params)
     @unpack cloud_base, cloud_top, ν_cloud, ν_above = params
@@ -433,6 +519,8 @@ end
 
 
 """
+    observeone!(o, p, r, μ, t, params)
+
 Check one particle and one observer and add the particle's contribution to
 the timeline and image.
 
@@ -501,7 +589,7 @@ function observeone!(o::Observer, ::Type{Null}, r, μ, t, params::Params) end
 """ 
 Given a unitary vector μ, sample a scattering angle from the HG
 distribution and finds a new vector that forms that angle with μ,
-which is then overwritten.
+which is returned.
 
 NB: This function breaks down if μ is directed exactly along z.
 """
@@ -514,14 +602,14 @@ NB: This function breaks down if μ is directed exactly along z.
     ϕ = 2π * rand()
     cosθ = μhg(g, rand())
 
-    turn!(μ, cosθ, ϕ), true
+    turn(μ, cosθ, ϕ), true
 end
 
 
 """ 
 Given a unitary vector μ, sample a scattering angle from the Rayleigh
 distribution and finds a new vector that forms that angle with μ,
-which is then overwritten.
+which is returned.
 
 NB: This function breaks down if μ is directed exactly along z.
 """
@@ -529,19 +617,20 @@ NB: This function breaks down if μ is directed exactly along z.
     ϕ = 2π * rand()
     cosθ = μr(rand())
 
-    turn!(μ, cosθ, ϕ), true
+    turn(μ, cosθ, ϕ), true
 end
+
 
 scatterone(μ, ::Type{Null}, params) = (μ, true)
 
 
 """ 
-Deviate the direction of a particle
+    turn(μ, cosθ, ϕ)
 
-Change the unitary vector μ to a new one deviated with inclination θ and azimuth
-ϕ.  For performance, the passed parameter is cosθ instead of θ.
+Find a unitary vector deviated with inclination θ and azimuth
+ϕ with respect to μ.  For performance, the passed parameter is cosθ instead of θ.
 """
-@inline @fastmath function turn!(μ, cosθ, ϕ)
+@inline @fastmath function turn(μ, cosθ, ϕ)
     sinϕ, cosϕ = sincos(ϕ)
     
     sinθ = sqrt(1 - cosθ^2)
@@ -587,18 +676,6 @@ function pack!(p::Population)
     n
 end
 
-function Observer(obsdata::Dict{Any, Any})
-    μmax = sin(deg2rad(obsdata["fov"]))
-    δμ = 2 * μmax / obsdata["pixels"]
-    
-    obs = Observer(SVector(obsdata["shift"], 0,
-                           obsdata["altitude"]),
-                   obsdata["tsample"],
-                   δμ,
-                   μmax,
-                   zeros(obsdata["nsamples"]),
-                   zeros(obsdata["pixels"], obsdata["pixels"]))
-end
 
 # For static compilation. See PackageCompiler.jl docs
 Base.@ccallable function julia_main(ARGS::Vector{String})::Cint
