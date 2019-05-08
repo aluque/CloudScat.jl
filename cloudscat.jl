@@ -95,12 +95,17 @@ values it's best to set them reading a .yaml file as described in README.md.
     Λ_cloud = 1 / ν_cloud
     Λ_above = 1 / ν_above
 
-    # Maximum number of collisions per photon
-    max_iter::Int64 = 1000000
-    
     # Domain limit: photons above this height are discarded
     domain_top = 50 * co.kilo
 
+    # Maximum number of collisions per photon
+    max_iter::Int64 = Int(1e9)
+
+    # Minimum fill ratio of the population arrays
+    min_fill_ratio = 0.2
+
+    # Maximum number of active particles for repacking
+    min_actives_for_repack::Int64 = 1000
     
     @assert Qext > 0
     @assert g > 0
@@ -121,7 +126,7 @@ end
 
 Description of the photon population.
 """
-struct Population
+mutable struct Population
     n::Int64                           # Size of the population
     r::Vector{SVector{3, Float64}}     # Positions
     μ::Vector{SVector{3, Float64}}     # Directions
@@ -366,12 +371,17 @@ Run the MC simulation on a photon population and a collection of observers.
 """
 function run!(p::Population, observers::Vector{Observer}, params::Params)    
     @unpack max_iter, N = params
-    
+    @unpack min_fill_ratio, min_actives_for_repack = params
+
     prog = Progress(N, 5)
 
     for it in 1:max_iter
         actives = iterate!(p, observers, params)
-        
+
+        if (actives / p.n) < min_fill_ratio && actives > min_actives_for_repack
+            repack!(p)
+        end
+            
         if actives == 0
             ProgressMeter.finish!(prog)
             break
@@ -379,7 +389,8 @@ function run!(p::Population, observers::Vector{Observer}, params::Params)
         if it % 100 == 0
             update!(prog, N - actives,
                     showvalues=[(:iterations, it),
-                                (:particles, actives)])
+                                (:particles, actives),
+                                (:fill_ratio, actives / p.n)])
         end
     end
 end
@@ -392,8 +403,9 @@ Iterate over all particles in the population `p` and advance them, including
 their eventual observation by `observers`.
 """
 function iterate!(p::Population, observers::Vector{Observer}, params::Params)
-    # Active particles    
+    # Active particles
     c::Int64 = 0
+    
     @inbounds for i in 1:p.n
         p.isactive[i] || continue
         c += 1
@@ -558,7 +570,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     # N p(μ) / s^2.  To this we have to add an attenuation factor exp(-s / Λ).
     f = p(g, μscat) * exp(-τ) / (sobs^2 * N)
     
-    # Now find time of obervation if the particle manages to escape
+    # Now find time of observation if the particle manages to escape
     tobs = t + sobs / co.c
 
     # Update the observation curve
@@ -648,32 +660,34 @@ end
 
 
 """
-Reorder particles to have all active particle at the initial positions in
-the list.  This improves performance but very little so is not invoked now.
+    pack!(p)
+
+Reorders the particles in the population `p` to have all active particle 
+at the initial positions in the list.
 
 """
-function pack!(p::Population)
-    tail = p.n
+function repack!(p::Population)
+    start = time()
+    
+    # new positions
+    k = zeros(Int64, p.n)
+    c = 0
     for i in 1:p.n
-        if i >= tail
-            break
-        end
-
-        if !p.isactive[i]
-            while !p.isactive[tail] && tail > i
-                tail -= 1
-            end
-            if tail != i
-                # To keep track of deceased photons we should exchange
-                
-                p.μ[:, i] .= p.μ[:, tail]
-                p.r[:, i] .= p.r[:, tail]
-                p.isactive[i] = true
-                p.isactive[tail] = false
-            end
+        if p.isactive[i]
+            c += 1
+            k[c] = i
         end
     end
-    n
+
+    for i in 1:c
+        p.μ[i] = p.μ[k[i]]
+        p.r[i] = p.r[k[i]]
+        p.t[i] = p.t[k[i]] 
+        p.isactive[i] = true
+    end
+
+    @debug "\u1b[0KParticles repackaged (took $(1000 * (time() - start)) ms)"
+    p.n = c
 end
 
 
