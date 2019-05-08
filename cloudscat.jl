@@ -164,8 +164,8 @@ struct Observer
     δt::Float64              # Time-resolution of the detector
     δμ::Float64              # Spatial resoution of the camera (in cosine space)
     μmax::Float64            # Field-of-view in cosine space (i.e. max. observable mu)
-    obs::Vector{Float64}     # Observations
-    img::Array{Float64, 2}   # Image array
+    obs::Array{Float64, 2}   # Observations
+    img::Array{Float64, 3}   # Image array
 end
 
 
@@ -177,14 +177,14 @@ Create a observer structure from a dictionary of observer properties.
 function Observer(obsdata::Dict{Any, Any})
     μmax = sin(deg2rad(obsdata["fov"]))
     δμ = 2 * μmax / obsdata["pixels"]
-    
+    nt = Threads.nthreads()
     obs = Observer(SVector(obsdata["shift"], 0,
                            obsdata["altitude"]),
                    obsdata["tsample"],
                    δμ,
                    μmax,
-                   zeros(obsdata["nsamples"]),
-                   zeros(obsdata["pixels"], obsdata["pixels"]))
+                   zeros(obsdata["nsamples"], nt),
+                   zeros(obsdata["pixels"], obsdata["pixels"], nt))
 end
 
 
@@ -333,9 +333,11 @@ function save(fname, p::Population, observers::Vector{Observer},
             delay = norm(obs.r - [0, 0, params.source_altitude]) / co.c
             attrs(g)["delay"] = delay
             
-            g["t", args...] = [obs.δt * (i - 0.5) for i in 1:length(obs.obs)]
-            g["timeline", args...] = obs.obs
-            g["image", args...] = obs.img
+            g["t", args...] = [obs.δt * (i - 0.5) for i in 1:size(obs.obs, 1)]
+
+            # The dropdims(sum(...)) is to sum over each thread
+            g["timeline", args...] = dropdims(sum(obs.obs, dims=2), dims=2)
+            g["image", args...] = dropdims(sum(obs.img, dims=3), dims=3)
             
         end
     end
@@ -396,6 +398,7 @@ function run!(p::Population, observers::Vector{Observer}, params::Params)
 end
 
 
+const count = zeros(Int64, Threads.nthreads())
 """
     iterate!(p, observers, params)
 
@@ -404,37 +407,52 @@ their eventual observation by `observers`.
 """
 function iterate!(p::Population, observers::Vector{Observer}, params::Params)
     # Active particles
-    c::Int64 = 0
+    # c::Int64 = 0
     
-    @inbounds for i in 1:p.n
-        p.isactive[i] || continue
-        c += 1
+    count .= 0
+    Threads.@threads for tid in 1:Threads.nthreads()
+        @inbounds  for i in getrange(tid, p.n)
+            p.isactive[i] || continue
+            count[Threads.threadid()] += 1
 
-        # Propagate
-        l = travel(p.r[i][3], p.μ[i][3], params)
+            # Propagate
+            l = travel(p.r[i][3], p.μ[i][3], params)
         
-        p.r[i] = p.r[i] + p.μ[i] * l
-        p.t[i] += l / co.c
-        #@show p.r[i]
+            p.r[i] = p.r[i] + p.μ[i] * l
+            p.t[i] += l / co.c
+            #@show p.r[i]
         
-        # Check if inside the domain
-        if !indomain(p.r[i], params)
-            p.isactive[i] = false
-            continue
-        end
+            # Check if inside the domain
+            if !indomain(p.r[i], params)
+                p.isactive[i] = false
+                continue
+            end
 
-        # Choose scattering type
-        scat = choosescat(p.r[i][3], params)
+            # Choose scattering type
+            scat = choosescat(p.r[i][3], params)
         
-        # Accumulate observations
-        for o in observers
-            observeone!(o, scat, p.r[i], p.μ[i], p.t[i], params)
+            # Accumulate observations
+            for o in observers
+                observeone!(o, scat, p.r[i], p.μ[i], p.t[i], params)
+            end
+            
+            # Scatter and check if absorbed
+            p.μ[i], p.isactive[i] = scatterone(p.μ[i], scat, params)
         end
-        
-        # Scatter and check if absorbed
-        p.μ[i], p.isactive[i] = scatterone(p.μ[i], scat, params)
     end
-    c
+    sum(count)
+end
+
+
+""" Compute a range appropriate for this thread. 
+    Obtained from https://stackoverflow.com/questions/52593588/julia-why-doesnt-shared-memory-multi-threading-give-me-a-speedup
+"""
+function getrange(tid, n)
+    nt = Threads.nthreads()
+    d, r = divrem(n, nt)
+    from = (tid - 1) * d + min(r, tid - 1) + 1
+    to = from + d - 1 + (tid <= r ? 1 : 0)
+    from:to
 end
 
 
@@ -573,10 +591,12 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     # Now find time of observation if the particle manages to escape
     tobs = t + sobs / co.c
 
+    tid = Threads.threadid()
+    
     # Update the observation curve
     ind = 1 + Int64(fld(tobs, o.δt))
     if ind <= length(o.obs)
-        o.obs[ind] += f / o.δt
+        o.obs[ind, tid] += f / o.δt
     end
 
     # Now update the image at the given pixels
@@ -586,7 +606,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     if 0 < px <= size(o.img)[1] && 0 < py <= size(o.img)[2]
         # Note that we are not dividing here by the solid angle subtended
         # by the pixel.
-        o.img[px, py] += f
+        o.img[px, py, tid] += f
     end
 end
 
