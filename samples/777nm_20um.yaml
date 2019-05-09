@@ -1,0 +1,27 @@
+#
+# Parameters for 777 nm light and 20 us cloud droplets
+#
+parameters:
+
+  # Radius of the scattering particles
+  radius : 20e-6
+
+
+  # These parameteres are obtained with mie.py (based on PyMieScatt)
+  # with the refractive-index data of Hale 1973
+
+  # Extinction efficiency
+  Qext: 2.059371922684712
+
+  # Asymmetry parameter
+  g: 0.878648501286412
+
+  # Single scattering albedo
+  ω₀: 0.9999594449548763
+
+  
+  # The Rayleigh scattering cross-section can be calculated e.g with
+  # the code Rayleigh.jl
+
+  # Rayleigh scattering cross-section
+  σ: 1.1096322607590443e-31

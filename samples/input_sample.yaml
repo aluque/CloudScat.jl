@@ -1,0 +1,33 @@
+# This is a sample input file for the cloudscat.jl cloud-scattering code.
+#
+# The format is YAML, as interpreted by the YAML.jl julia package.
+#
+# The input in general consists of a `parameters` element with parameter: value pairs
+# and a list of observers, each of them being a dictionary with parameter: value pairs.
+#
+# All unitful magnitudes are specified in SI units.
+
+
+# Optionally one can include some additional files using includes: [file1, file2...].
+# Here we include a file with the optical properties of the cloud (valid for a given
+# wavelength and droplet radius) and the description of several observers.
+includes: [777nm_20um.yaml, observers.yaml]
+
+parameters:
+  # Droplet density inside the cloud
+  nscat : 1e8    # 100 * co.centi^-3
+
+  # Cloud limits
+  cloud_base : 6000
+  cloud_top : 15000
+
+  # Currently the source is modelled as a vertical segment.
+  # Location of the source center
+  source_altitude : 10000
+    
+  # Vertical extension of the source.  Zero here means a point source.
+  # In this case the source extends from -6 to 14 km.
+  source_extension: 4000
+  
+  # Initial number of computational photons
+  N : 4000000
