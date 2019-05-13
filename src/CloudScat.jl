@@ -21,6 +21,7 @@ using ProgressMeter
 include("constants.jl")
 const co = constants
 
+include("Rayleigh.jl")
 
 """
     Params
