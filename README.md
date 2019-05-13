@@ -19,8 +19,8 @@ add http://gitlab.com/aluque/cloudscat
 To start a simulation from the julia prompt use
 
 ```julia
-import CloudScat
-CloudScat.runfromfile("input_file.yaml")
+julia> import CloudScat
+julia> CloudScat.runfromfile("input_file.yaml")
 ```
 
 where `input_file.yaml` is your input file defining the cloud geometry and optical properties. There is a explanatory example in the `samples` folder of the repository. If you have a multi-core cpu you can tell julia to use several threads to accelerate the computation.  For example to use 4 threads start julia with
@@ -47,4 +47,23 @@ The sample input file `input_file.yaml` should produce an observed signal that l
 
 ![input_file.png](samples/input_file.png)
 
+## Extras
+
+The repository also contains code to calculate parameters for Mie and Rayleigh scattering.
+
+### Rayleigh scattering
+
+To calculate the cross section for Rayleigh scattering at any wavelength (e.g. 777 nm) type in the julia prompt
+```julia
+julia> import CloudScat.Ray
+julia> Ray.rayleigh(777e-9) 
+1.1096322607590443e-31
+```
+
+### Mie scattering
+The parameters for Mie scattering can be calculated using the `PyMieScatt` python package.  Install it with
+```bash
+pip install PyMieScatt
+```
+And then use the script `mie.py` to calculate the parameters required for a MC simulation. The refractive index of water is read from the file `Hale.dat`.
 
