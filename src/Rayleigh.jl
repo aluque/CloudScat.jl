@@ -14,7 +14,7 @@ julia> rayleigh(337 * co.nano)
 ```
 Alejandro Luque, IAA-CSIC, 2019
 """
-module Rayleigh
+module Ray
 
 export AIR_STP, rayleigh, co
 
