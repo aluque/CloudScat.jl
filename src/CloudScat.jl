@@ -7,7 +7,6 @@ Alejandro Luque, IAA-CSIC, 2019
 """
 module CloudScat
 
-using BenchmarkTools
 using LinearAlgebra
 using StaticArrays
 using HDF5
@@ -80,6 +79,7 @@ values it's best to set them reading a .yaml file as described in README.md.
     H = 7.2e3
 
     # Frequency of Rayleigh scattering events at the cloud base
+
     νRay_base = (σ * nground * exp(-cloud_base / H))
 
     # Frequency of Rayleigh scattering events at the cloud top
@@ -227,15 +227,15 @@ indomain(z::Real, params) = (z > params.cloud_base && z < params.domain_top)
 indomain(r::AbstractArray, params) = indomain(r[3], params)
 
 
-function main(args)
+function runfromfile(infile)
     # Always use colors
     Crayons.force_color(true)
-
-    infile = args[1]
 
     # Print greetings
     println(BOLD(GREEN_FG(format("[{}] Cloud-scattering code by A. Luque, IAA-CSIC (aluque@iaa.es)", Dates.now()))))
     println(BOLD(GREEN_FG(format("[{}] cloudscat.jl {}", Dates.now(), infile))))
+    println(BOLD(GREEN_FG(format("[{}] Running with {} thread(s) (JULIA_NUM_THREADS)",
+                                 Dates.now(), Threads.nthreads()))))
 
     outfile = splitext(infile)[1] * ".h5"
     params, observers = readinput(infile)
@@ -713,12 +713,12 @@ end
 
 # For static compilation. See PackageCompiler.jl docs
 Base.@ccallable function julia_main(ARGS::Vector{String})::Cint
-    main()
+    runfromfile(ARGS[1])
     return 0
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    main(ARGS)
+    runfromfile(ARGS[1])
 end
 
 end
