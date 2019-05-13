@@ -36,9 +36,6 @@ def plotone(fname, obs):
     t = np.array(fp[f"obs{obs:05d}/t"])
     g = fp[f"obs{obs:05d}"]
 
-    from IPython import embed
-    embed()
-
     decay = decay_time(t - g.attrs["delay"], tl)
 
     tshift = t - g.attrs["delay"]

@@ -41,3 +41,10 @@ To see the image recorded by the same observer use
 > python plot_image input_file.h5 --observer=1
 ```
 
+## Example
+
+The sample input file `input_file.yaml` should produce an observed signal that looks something like this:
+
+![input_file.png](samples/input_file.png)
+
+
