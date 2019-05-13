@@ -1,4 +1,4 @@
 import CloudScat
 
-CloudScat.runfromfile(ARGV[1])
+CloudScat.runfromfile(ARGS[1])
 
