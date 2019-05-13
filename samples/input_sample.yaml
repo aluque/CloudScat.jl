@@ -17,7 +17,7 @@ parameters:
   # Droplet density inside the cloud
   nscat : 1e8    # 100 * co.centi^-3
 
-  # Cloud limits
+  # Cloud limits.  The cloud is contained between two planes at these altitudes above ground.
   cloud_base : 6000
   cloud_top : 15000
 
@@ -26,8 +26,8 @@ parameters:
   source_altitude : 10000
     
   # Vertical extension of the source.  Zero here means a point source.
-  # In this case the source extends from -6 to 14 km.
+  # In this case the source extends from 6 to 14 km.
   source_extension: 4000
   
   # Initial number of computational photons
-  N : 4000000
+  N : 1000000
