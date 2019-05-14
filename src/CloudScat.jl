@@ -103,7 +103,7 @@ values it's best to set them reading a .yaml file as described in README.md.
     max_iter::Int64 = Int(1e9)
 
     # Minimum fill ratio of the population arrays
-    min_fill_ratio = 0.2
+    min_fill_ratio = 0.95
 
     # Maximum number of active particles for repacking
     min_actives_for_repack::Int64 = 1000
@@ -411,8 +411,9 @@ function iterate!(p::Population, observers::Vector{Observer}, params::Params)
     # c::Int64 = 0
     
     count .= 0
+    
     Threads.@threads for tid in 1:Threads.nthreads()
-        @inbounds  for i in getrange(tid, p.n)
+        @inbounds for i in getrange(tid, p.n)
             p.isactive[i] || continue
             count[Threads.threadid()] += 1
 
