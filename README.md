@@ -12,6 +12,7 @@ The code is distributed as a [julia](https://julialang.org) package.  To install
 ```julia
 add http://gitlab.com/aluque/cloudscat
 ```
+You can exit the package manager by pressing backspace at the beginning of the prompt.
 
 ## Use
 
