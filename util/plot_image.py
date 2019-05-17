@@ -31,6 +31,9 @@ def get_parser():
     parser.add_argument("--log", action='store_true',
                         help="Logarithmic scale?")
 
+    parser.add_argument("--clim", "-c",
+                        help="Limits of the color axis (c0:c1)", 
+                        action='store', default=None)
 
     return parser
 
@@ -63,6 +66,11 @@ def main():
         img = img[:, yfilter]
         y = y[yfilter]
 
+    if args.clim is not None:
+        clim = [float(v) for v in args.clim.split(':')]
+        kwargs['vmin'], kwargs['vmax'] = clim
+
+        
     if args.log:
         kwargs['norm'] = LogNorm()
 
