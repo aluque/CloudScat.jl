@@ -194,6 +194,7 @@ end
 abstract type ScatteringType end 
 struct Mie <: ScatteringType end
 struct Rayleigh <: ScatteringType end
+struct Isotropic <: ScatteringType end
 struct Null <: ScatteringType end
 
 
@@ -210,6 +211,8 @@ pr(μ) = (3 / 16π) * (1 + μ^2)
 # Hack to allow interchanging both phase functions
 pr(g, μ) = pr(μ)
 
+# Hack to use the HG phase function for isotropic scattering
+piso(g, μ) = phg(0.0, μ)
 
 # Sample from the Rayleigh phase function.  The PDF notes are wrong.
 function μr(ξ)
@@ -376,8 +379,10 @@ function run!(p::Population, observers::Vector{Observer}, params::Params)
     @unpack max_iter, N = params
     @unpack min_fill_ratio, min_actives_for_repack = params
 
+    observeall!(p, observers, params)
+    
     prog = Progress(N, 5)
-
+    
     for it in 1:max_iter
         actives = iterate!(p, observers, params)
 
@@ -394,6 +399,25 @@ function run!(p::Population, observers::Vector{Observer}, params::Params)
                     showvalues=[(:iterations, it),
                                 (:particles, actives),
                                 (:fill_ratio, actives / p.n)])
+        end
+    end
+end
+
+
+"""
+    observeall!(p, observers, params)
+
+Calculate the contribution of photons that are not scattered at all.
+This function is called only once after the photon population has been 
+initialized.
+"""
+function observeall!(p::Population, observers::Vector{Observer}, params::Params)
+    for i in 1:p.n
+        # This should not be neccesary but it's best to keep it just in case
+        p.isactive[i] || continue
+
+        for o in observers
+            observeone!(o, Isotropic, p.r[i], p.μ[i], p.t[i], params)
         end
     end
 end
@@ -615,6 +639,8 @@ end
 observeone!(o::Observer, ::Type{Mie}, r, μ, t, params::Params) =
     observeone!(o, phg, r, μ, t, params)
 observeone!(o::Observer, ::Type{Rayleigh}, r, μ, t, params::Params) =
+    observeone!(o, pr, r, μ, t, params)
+observeone!(o::Observer, ::Type{Isotropic}, r, μ, t, params::Params) =
     observeone!(o, pr, r, μ, t, params)
 function observeone!(o::Observer, ::Type{Null}, r, μ, t, params::Params) end
 
