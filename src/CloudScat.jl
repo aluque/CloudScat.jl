@@ -362,7 +362,7 @@ function initphotons!(p::Population, params::Params)
 
     for i in 1:p.n
         z = source_altitude + (rand() - 0.5) * source_extension
-        p.r[i] = @SVector [0, 0, source_altitude]
+        p.r[i] = @SVector [0, 0, z]
         p.μ[i] = randsphere()
         p.t[i] = 0.0
         p.isactive[i] = true
@@ -446,7 +446,6 @@ function iterate!(p::Population, observers::Vector{Observer}, params::Params)
         
             p.r[i] = p.r[i] + p.μ[i] * l
             p.t[i] += l / co.c
-            #@show p.r[i]
         
             # Check if inside the domain
             if !indomain(p.r[i], params)
