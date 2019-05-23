@@ -99,6 +99,10 @@ values it's best to set them reading a .yaml file as described in README.md.
     # Domain limit: photons above this height are discarded
     domain_top = 50 * co.kilo
 
+    # Max Mie depth: photons below cloud_top - max_mie_depth / νMie are
+    # assumed not to be observable.
+    max_mie_depth = 30.0
+        
     # Maximum number of collisions per photon
     max_iter::Int64 = Int(1e9)
 
@@ -194,7 +198,6 @@ end
 abstract type ScatteringType end 
 struct Mie <: ScatteringType end
 struct Rayleigh <: ScatteringType end
-struct Isotropic <: ScatteringType end
 struct Null <: ScatteringType end
 
 
@@ -379,8 +382,10 @@ function run!(p::Population, observers::Vector{Observer}, params::Params)
     @unpack max_iter, N = params
     @unpack min_fill_ratio, min_actives_for_repack = params
 
-    observeall!(p, observers, params)
+    set_zero_subnormals(true)
     
+    observeall!(p, observers, params)
+
     prog = Progress(N, 5)
     
     for it in 1:max_iter
@@ -417,7 +422,11 @@ function observeall!(p::Population, observers::Vector{Observer}, params::Params)
         p.isactive[i] || continue
 
         for o in observers
-            observeone!(o, Isotropic, p.r[i], p.μ[i], p.t[i], params)
+            # Since we have initialized all photons isotropically,
+            # now it shouldn't matter which phase function we use.
+            # For performance reason it seems it best to use one already
+            # defined one and we opt for Rayleigh.
+            observeone!(o, Rayleigh, p.r[i], p.μ[i], p.t[i], params)
         end
     end
 end
@@ -584,6 +593,9 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
 @inline @fastmath function observeone!(o::Observer, p,
                                        r, μ, t, params::Params)
     @unpack cloud_top, g, N, H, σ, nground, νMie = params
+    @unpack max_mie_depth = params
+    
+    (r[3] > cloud_top - max_mie_depth / νMie) || return
     
     # Distance to the observer
     sobs = norm(o.r - r)
@@ -621,7 +633,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     # Update the observation curve
     ind = 1 + Int64(fld(tobs, o.δt))
     if ind <= length(o.obs)
-        o.obs[ind, tid] += f / o.δt
+        @inbounds o.obs[ind, tid] += f / o.δt
     end
 
     # Now update the image at the given pixels
@@ -631,15 +643,13 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     if 0 < px <= size(o.img)[1] && 0 < py <= size(o.img)[2]
         # Note that we are not dividing here by the solid angle subtended
         # by the pixel.
-        o.img[px, py, tid] += f
+        @inbounds o.img[px, py, tid] += f
     end
 end
 
 observeone!(o::Observer, ::Type{Mie}, r, μ, t, params::Params) =
     observeone!(o, phg, r, μ, t, params)
 observeone!(o::Observer, ::Type{Rayleigh}, r, μ, t, params::Params) =
-    observeone!(o, pr, r, μ, t, params)
-observeone!(o::Observer, ::Type{Isotropic}, r, μ, t, params::Params) =
     observeone!(o, pr, r, μ, t, params)
 function observeone!(o::Observer, ::Type{Null}, r, μ, t, params::Params) end
 
