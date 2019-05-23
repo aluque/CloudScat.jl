@@ -1,21 +1,22 @@
 #
-# Parameters for 777 nm
+# Parameters for 337 nm, 20 um cloud particles
 #
 parameters:
   # These parameteres are obtained with mie.py (based on PyMieScatt)
-  # with the refractive-index data of Hale 1973 and for 777nm wavelength,
-  # 10um radius.
+  # with the refractive-index data of Hale 1973 and for 337nm wavelength,
+  # 20um radius.
 
   radius: 2e-5
   
   # Extinction efficiency
-  Qext: 2.059371922684712
+  Qext: 2.0472392763955085
 
   # Asymmetry parameter
-  g: 0.878648501286412
+  g: 0.8758298943565282
 
   # Single scattering albedo (Thomason and Krider)
-  ω₀: 0.9999594449548763
+  ω₀: 0.9999944327592456
 
   # Rayleigh scattering cross-section for 337 nm
-  σ: 1.1096322607590443e-31
+  σ: 3.4371080894577986e-30
+

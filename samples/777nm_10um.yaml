@@ -6,16 +6,17 @@ parameters:
   # with the refractive-index data of Hale 1973 and for 777nm wavelength,
   # 10um radius.
 
-  radius: 2e-5
-  
+  # Radius of the scattering particles
+  radius : 10e-6
+
   # Extinction efficiency
-  Qext: 2.059371922684712
+  Qext: 2.093281633997557
 
   # Asymmetry parameter
-  g: 0.878648501286412
+  g: 0.8731103225706698
 
   # Single scattering albedo (Thomason and Krider)
-  ω₀: 0.9999594449548763
+  ω₀: 0.9999798084239254
 
   # Rayleigh scattering cross-section for 337 nm
   σ: 1.1096322607590443e-31
