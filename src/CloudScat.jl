@@ -176,7 +176,7 @@ end
 Create a observer structure from a dictionary of observer properties.
 """
 function Observer(obsdata::Dict{Any, Any})
-    μmax = sin(deg2rad(obsdata["fov"]))
+    μmax = sin(deg2rad(obsdata["fov"])) / sqrt(2)
     δμ = 2 * μmax / obsdata["pixels"]
     nt = Threads.nthreads()
     obs = Observer(SVector(obsdata["shift"], 0,
