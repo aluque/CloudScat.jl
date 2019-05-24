@@ -632,7 +632,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     
     # Update the observation curve
     ind = 1 + Int64(fld(tobs, o.δt))
-    if ind <= length(o.obs)
+    if ind <= size(o.obs, 1)
         @inbounds o.obs[ind, tid] += f / o.δt
     end
 
