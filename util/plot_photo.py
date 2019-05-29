@@ -15,10 +15,17 @@ def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("input",
                         help="HDF5 input file1")
+
     parser.add_argument("--observer",
                         type=int,
                         default=1,
                         help="Observer number (1-based)")
+
+    parser.add_argument("--nofit",
+                        action="store_true",
+                        help="Remove the fits",
+                        default=False)
+
     return parser
 
 
@@ -26,84 +33,106 @@ def main():
     parser = get_parser()                        
     args = parser.parse_args()
 
-    plotone(args.input, args.observer)
+    plotone(args.input, args.observer, fits=not args.nofit)
         
     
-def plotone(fname, obs):
+def plotone(fname, obs, fits=True):
     fp = h5py.File(fname, "r")
     
     tl = np.array(fp[f"obs{obs:05d}/timeline"])
     t = np.array(fp[f"obs{obs:05d}/t"])
-    g = fp[f"obs{obs:05d}"]
+    obs = fp[f"obs{obs:05d}"]
+    params = fp["parameters"]
 
-    decay = decay_time(t - g.attrs["delay"], tl)
+    n, Qext, r = (params.attrs[k] for k in ("nscat", "Qext", "radius"))
+    g, cloud_top, z, om0 = (params.attrs[k] for k in ("g", "cloud_top",
+                                                      "source_altitude",
+                                                      "ω₀"))
+    
+    L = cloud_top - z
+    lmbd = 1 / (n * Qext * np.pi * r**2)
+    D = lmbd * co.c / (3 * (1 - g * om0))
+    tau = L**2 / (4 * D)
+    alpha = tau * (1 - om0) * co.c / lmbd
+    
+    print("From parameters:")
+    print(f"  g     = {g}")
+    print(f"  tau   = {tau}")
+    print(f"  alpha = {alpha}")
+    
+    tshift = t - obs.attrs["delay"]
 
-    tshift = t - g.attrs["delay"]
+    #norm, tstart, tauf, alphaf = exittime_fit(tshift, tl)
+
+    norm, tstart, tauf, alphaf = exittime_fit2(tshift, tl)
+    
+    print("From fit:")
+    print(f"  tau   = {tauf}")
+    print(f"  alpha = {alphaf}")
 
     plt.plot(tshift / co.milli,
-             tl, label="shift=%f" % g.attrs["shift"])
+             tl, label="Model" % obs.attrs["shift"])
 
-    sigma, l0, z = lognorm_fit(tshift, tl)
+    if fits:
+        plt.plot(tshift / co.milli,
+                 norm * exittime(tshift, tstart, tauf, alphaf),
+                 label="Fit" % obs.attrs["shift"], color="k")
 
-    # def lnorm(t, sigma, l0, A):
-    #     return A * np.exp(-(np.log(tshift) - l0)**2 / (2 * sigma**2))
+        plt.plot(tshift / co.milli,
+                 norm * exittime(tshift, 0.0, tau, alpha),
+                 label="Analytical" % obs.attrs["shift"], color="r")
 
-    # popt, pcov = curve_fit(lnorm, tshift, tl, p0=[sigma, l0, np.exp(z)])
-    # sigma, l0, A = popt
-
-    A = np.exp(z)
-    t0 = np.exp(l0)
-    itotal = A * np.sqrt(2 * np.pi) * np.exp(sigma**2 / 2) * t0 * sigma
-
-    dt = t[1] - t[0]
-    itotal0 = sum(tl) * dt
-
-    print(f"    sigma = {sigma}")
-    print(f"    t0 = {np.exp(l0) / co.milli} ms")
-    print(f"    A  = {A}")
-    print(f"    itotal  = {itotal} ({itotal0})")
-
-    plt.plot(tshift / co.milli,
-             A * np.exp(-(np.log(tshift) - l0)**2 / (2 * sigma**2)),
-             c='k', alpha=0.5, lw=0.75)
-
-    print("shift = %g km ==>  decay = %g ms" %
-          (g.attrs["shift"] / co.kilo,
-           decay / co.milli))
         
     plt.xlabel("Time (ms)")
     plt.ylabel("photons / m$^2$ / s / source photon")
+    plt.legend()
+    
     #plt.xlim([1e-2, 15])
     #plt.loglog()
     plt.show()
 
+
+def exittime(t, tstart, tau, alpha):
+    t1 = t - tstart
+    w = (np.exp(2 * np.sqrt(alpha)) *
+         np.sqrt(tau / t1**3) * np.exp(-tau / t1)
+         * np.exp(-alpha * t1 / tau) / np.sqrt(np.pi))
+    return np.where(w > 0, w, 0)
+
     
-def decay_time(t, s):
-    imax = np.argmax(s)
-
-    t = t[imax:] - t[imax]
-    s = s[imax:] / s[imax]
-
-    flt = s > 0.1
-    a, b, _, _, _ = stats.linregress(t[flt], np.log(s[flt]))
-
-    return -1 / a
-
-
-def lognorm_fit(t, s):
-    imax = np.argmax(s)
+def exittime_fit(t, s):
+    """ Fit a signal `s` sampled at times `t` to a exit-time times absorption
+    curve. Returns:
+    norm: the multiplying factor.
+    t0: the starting time of the signal
+    tau: the characteristic exit time
+    alpha: the absroption rate in terms of tau.
+    """
+    # Assuming uniform sampling
+    dt = t[1] - t[0]
     
-    flt = np.logical_and(s > 0.05 * s[imax], t > 0)
+    norm = sum(s)
 
-    v = np.vander(np.log(t[flt]), 3)
-    a, b, c = np.linalg.lstsq(v, np.log(s[flt]))[0]
-
-    sigma = 1 / np.sqrt(-2 * a)
-    l0 = -0.5 * b / a
-    z = c - 0.25 * b**2 / a
-
-    return sigma, l0, z
+    tavg = sum(t * s) / norm
+    tdev2 = sum((t - tavg)**2 * s) / norm
+    tskew = sum((t - tavg)**3 * s) / norm / tdev2**1.5
     
+    alpha = (3 / (np.sqrt(2) * tskew))**4
+    tau = np.sqrt(2 * alpha**1.5 * tdev2)
+
+    t0 = tavg - tau / np.sqrt(alpha)
     
+    return dt * norm, t0, tau, alpha
+    
+
+def exittime_fit2(t, s):
+    dt = t[1] - t[0]
+    norm = sum(s) * dt
+    
+    popt, pcov = curve_fit(exittime, t, s / norm, p0=[0.0, 5e-4, 0.05]) 
+
+    return (norm, *popt)
+
+
 if __name__ == '__main__':
     main()
