@@ -7,8 +7,8 @@ Bodhaine et al. (1999) J. Atmosph. Ocean. Tech., 16 1854.
 If invoked as julia Rayleigh.jl, computes the cross sections for 337 and 777 nm.
 From the julia REPL you can compute cross sections for any wavelength as e.g.
 ```julia-repl
-julia> include("Rayleigh.jl")
-julia> using Main.Rayleigh
+julia> include("rayleigh.jl")
+julia> using Main.Ray
 julia> rayleigh(337 * co.nano)
 3.4371080894577986e-30
 ```
@@ -80,7 +80,7 @@ end
 """
 Compute the Rayleigh scattering cross-section.
 """
-function rayleigh(λ; composition=AIR_STP)
+function σ(λ; composition=AIR_STP)
     n = peck(λ)
     P = sum(ppmv * F[gas](λ / co.micro) for (gas, ppmv) in composition) / 1e6
     

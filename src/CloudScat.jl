@@ -1,128 +1,40 @@
-""" 
-cloudscat.jl
-
-Light scattering by clouds
-
-Alejandro Luque, IAA-CSIC, 2019
-"""
 module CloudScat
-
-using LinearAlgebra
 using StaticArrays
-using HDF5
+using QuadGK
+using LinearAlgebra
+using Interpolations
 using Dates
-using Parameters
+using HDF5
 using YAML
-using Crayons
-using Crayons.Box
+using Parameters
 using Formatting
 using ProgressMeter
+using Random
 
+export World, Observer
+
+include("parameters.jl")
+include("geometry.jl")
+include("phasefuncs.jl")
 include("constants.jl")
+include("rayleigh.jl")
+
 const co = constants
 
-include("Rayleigh.jl")
 
-"""
-    Params
+# For the dynamical dispatch we define types of collisions but they
+# currently don't do anything
+abstract type ScatteringType end 
+struct Mie <: ScatteringType end
+struct Rayleigh <: ScatteringType end
+struct Null <: ScatteringType end
+struct Isotropic <: ScatteringType end
 
-Structure to contain all simulation parameters.
 
-Although in the definition many of the parameters take reasonable default
-values it's best to set them reading a .yaml file as described in README.md.
-"""
-@with_kw mutable struct Params @deftype Float64
-    # Cloud limits
-    cloud_base = 7 * co.kilo
-    cloud_top  = 15 * co.kilo 
-
-    # Location of the source
-    source_altitude = 8 * co.kilo
-
-    # Vertical extension of the source
-    source_extension = 0
-    
-    # Initial number of photons
-    N::Int64 = 10000
-
-    # Extinction efficiency: generally close to 2 for our configuration
-    Qext = 2.0
-    
-    # Assymetry parameter (see e.g. Jursa Handbook of Geophysics and the
-    # Space Environment, chap. 18 or Koshak 1994)
-    g = 0.84
-
-    # Single scattering albedo (Koshak 1994)
-    ω₀ = 0.99996
-
-    # Radius of the scattering particles
-    radius = 10e-6
-
-    # Scatering particle density
-    nscat = 100 * co.centi^-3
-
-    # Frequency of Mie scattering
-    νMie = (Qext * π * radius^2 * nscat)
-
-    # Mean-free-path between Mie scattering events
-    ΛMie = 1 / νMie
-
-    #
-    # Parameters for Rayleigh scattering
-    #
-    # Cross section for molecular scattering
-    σ = 3e-30
-
-    # Air density at the ground
-    nground = 2.6748e25
-
-    # Atmospheric scale height
-    H = 7.2e3
-
-    # Frequency of Rayleigh scattering events at the cloud base
-
-    νRay_base = (σ * nground * exp(-cloud_base / H))
-
-    # Frequency of Rayleigh scattering events at the cloud top
-    νRay_top = (σ * nground * exp(-cloud_top / H))
-
-    # Max. Frequency of Total scattering inside the cloud
-    ν_cloud = νRay_base + νMie
-
-    # Max. Frequency of Total scattering above the cloud
-    ν_above = νRay_top
-    
-    # Mean free paths between collisions (Mie, Rayleigh and Null)
-    Λ_cloud = 1 / ν_cloud
-    Λ_above = 1 / ν_above
-
-    # Domain limit: photons above this height are discarded
-    domain_top = 50 * co.kilo
-
-    # Max Mie depth: photons below cloud_top - max_mie_depth / νMie are
-    # assumed not to be observable.
-    max_mie_depth = 30.0
-        
-    # Maximum number of collisions per photon
-    max_iter::Int64 = Int(1e9)
-
-    # Minimum fill ratio of the population arrays
-    min_fill_ratio = 0.95
-
-    # Maximum number of active particles for repacking
-    min_actives_for_repack::Int64 = 1000
-    
-    @assert Qext > 0
-    @assert g > 0
-    @assert ω₀ > 0
-    @assert radius > 0
-    @assert nscat > 0
-    @assert 0 <= cloud_base <= cloud_top
-    @assert cloud_base <= source_altitude <= cloud_top
-    @assert σ >= 0
-    @assert nground > 0
-    @assert H > 0
-    @assert domain_top >= cloud_top
+struct World{Tc,Td,Fn}
+    cloud::Tc
+    domain::Td
+    nfunc::Fn
 end
 
 
@@ -167,8 +79,8 @@ collects photons, building
 struct Observer
     r::SVector{3, Float64}   # Location of the observer
     δt::Float64              # Time-resolution of the detector
-    δμ::Float64              # Spatial resoution of the camera (in cosine space)
-    μmax::Float64            # Field-of-view in cosine space (i.e. max. observable mu)
+    δu::Float64              # Spatial resoution of the camera (in cosine space)
+    umax::Float64            # Field-of-view in cosine space (i.e. max. observable mu)
     obs::Array{Float64, 2}   # Observations
     img::Array{Float64, 3}   # Image array
 end
@@ -179,132 +91,38 @@ end
 
 Create a observer structure from a dictionary of observer properties.
 """
-function Observer(obsdata::Dict{Any, Any})
-    μmax = sin(deg2rad(obsdata["fov"])) / sqrt(2)
-    δμ = 2 * μmax / obsdata["pixels"]
+function Observer(;shift, altitude, fov, pixels, tsample, nsamples)
+    loc = SVector(shift, 0, altitude)
+    umax = tan(deg2rad(fov)) / sqrt(2)
+    δu = 2 * umax / pixels
     nt = Threads.nthreads()
-    obs = Observer(SVector(obsdata["shift"], 0,
-                           obsdata["altitude"]),
-                   obsdata["tsample"],
-                   δμ,
-                   μmax,
-                   zeros(obsdata["nsamples"], nt),
-                   zeros(obsdata["pixels"], obsdata["pixels"], nt))
+
+    obs = Observer(loc,
+                   tsample,
+                   δu,
+                   umax,
+                   zeros(nsamples, nt),
+                   zeros(pixels, pixels, nt))
 end
 
 
-# For the dynamical dispatch we define types of collisions but they
-# currently don't do anything
-abstract type ScatteringType end 
-struct Mie <: ScatteringType end
-struct Rayleigh <: ScatteringType end
-struct Null <: ScatteringType end
-
-
-# Henyey-Greenstein phase function.
-phg(g, μ) = (1 / 4π) * (1 - g^2) / (1 + g^2 - 2 * g * μ)^(3/2)
-
-# Sampling from the HG phase function.
-# Here ξ in a random variable uniformly distributed between 0 and 1
-μhg(g, ξ) = (1 + g^2 - ((1 - g^2) / (1 + g * (2 * ξ - 1)))^2) / (2 * g)
-
-# Rayleigh phase function
-pr(μ) = (3 / 16π) * (1 + μ^2)
-
-# Hack to allow interchanging both phase functions
-pr(g, μ) = pr(μ)
-
-# Hack to use the HG phase function for isotropic scattering
-piso(g, μ) = phg(0.0, μ)
-
-# Sample from the Rayleigh phase function.  The PDF notes are wrong.
-function μr(ξ)
-    z = 2 * (2ξ - 1)
-    w = z + sqrt(z^2 + 1)
-    w^(1//3) - w^(-1//3)
-end
-
-
-# A function to check if the particle is inside the cloud
-incloud(z::Real, params) = (z > params.cloud_base && z < params.cloud_top)
-incloud(r::AbstractArray, params) = incloud(r[3], params)
-
-# A function to check if the particle is inside the domain.
-indomain(z::Real, params) = (z > params.cloud_base && z < params.domain_top)
-indomain(r::AbstractArray, params) = indomain(r[3], params)
-
-
-function runfromfile(infile)
-    # Always use colors
-    Crayons.force_color(true)
-
-    # Print greetings
-    println(BOLD(GREEN_FG(format("[{}] Cloud-scattering code by A. Luque, IAA-CSIC (aluque@iaa.es)", Dates.now()))))
-    println(BOLD(GREEN_FG(format("[{}] cloudscat.jl {}", Dates.now(), infile))))
-    println(BOLD(GREEN_FG(format("[{}] Running with {} thread(s) (JULIA_NUM_THREADS)",
-                                 Dates.now(), Threads.nthreads()))))
-
-    outfile = splitext(infile)[1] * ".h5"
-    params, observers = readinput(infile)
-
+function main(params::Params, world::World, observers::Vector{Observer};
+              saveto::Union{String,Nothing}=nothing)
     # Print a list of parameters
-    println()
-    for field in fieldnames(Params)
-        printfmtln("{:<45s}: {}",
-                   BOLD(YELLOW_FG(String(field))), getfield(params, field))
-    end
-    println()
-
-    # Init all photons
+    @info "Input parameters:" params
+    
+    @info "Running with $(Threads.nthreads()) thread(s) (JULIA_NUM_THREADS)"
+    
+    @info "Initializing the photon population"
     p = Population(params.N)
     initphotons!(p, params)
-    
+
     # Run the MC simulation
-    run!(p, observers, params)
+    @info "Running the MC simulation"
+    run!(p, world, observers, params)
 
-    # Save output
-    save(outfile, p, observers, params)    
-end
-
-
-"""
-    readinput(input)
-
-Read the input parameters and observer configuration from a .yaml file
-´infile´.
-"""
-function readinput(infile)    
-    input = YAML.load_file(infile)
-
-    paramdict = input["parameters"]
-
-    # Allow a simple way to include other definitions
-    includes = [YAML.load_file(fname) for fname in get(input, "includes", [])]
-
-    for include in includes
-        merge!(paramdict, get(include, "parameters", Dict()))
-    end
-        
-    params = Params(;Dict(Symbol(k)=>v for (k, v) in paramdict)...)
-
-
-    # Init all observers
-    observers = Vector{Observer}()
-        
-    for obsdata in get(input, "observers", [])
-        obs = Observer(obsdata)
-        push!(observers, obs)
-    end
-
-    # Read observers also from files in includes: [...]
-    for include in includes
-        for obsdata in get(include, "observers", [])
-            obs = Observer(obsdata)
-            push!(observers, obs)
-        end
-    end
-    
-    params, observers
+    !isnothing(saveto) && save(saveto, p, observers, params)
+    p, observers
 end
 
 
@@ -337,7 +155,8 @@ function save(fname, p::Population, observers::Vector{Observer},
             attrs(g)["altitude"] = obs.r[3]
             attrs(g)["shift"] = obs.r[1]
 
-            delay = norm(obs.r - [0, 0, params.source_altitude]) / co.c
+            rsource = 0.5 * (params.source_a + params.source_b)
+            delay = norm(obs.r - rsource) / co.c
             attrs(g)["delay"] = delay
             
             g["t", args...] = [obs.δt * (i - 0.5) for i in 1:size(obs.obs, 1)]
@@ -348,10 +167,7 @@ function save(fname, p::Population, observers::Vector{Observer},
             
         end
     end
-    println()
-    println(BOLD(GREEN_FG(format("[{}] Output written in {}",
-                               Dates.now(), fname))))
-    println()
+    @info "Output written in $fname"
 end
 
 
@@ -361,11 +177,11 @@ end
 Initialize all photons in a population `p` according to the parameters `params`.
 """
 function initphotons!(p::Population, params::Params)
-    @unpack source_altitude, source_extension = params
+    @unpack source_a, source_b = params
 
     for i in 1:p.n
-        z = source_altitude + (rand() - 0.5) * source_extension
-        p.r[i] = @SVector [0, 0, z]
+        ξ = trand()
+        p.r[i] = (1 - ξ) * source_a + ξ * source_b
         p.μ[i] = randsphere()
         p.t[i] = 0.0
         p.isactive[i] = true
@@ -374,24 +190,25 @@ end
 
 
 """
-    run!(p, observers, params)
+    run!(p, world, observers, interps, params)
 
 Run the MC simulation on a photon population and a collection of observers.
 """
-function run!(p::Population, observers::Vector{Observer}, params::Params)    
+function run!(p::Population, world::World, observers::Vector{Observer},
+              params::Params)    
     @unpack max_iter, N = params
     @unpack min_fill_ratio, min_actives_for_repack = params
 
     set_zero_subnormals(true)
     
-    observeall!(p, observers, params)
+    observeall!(p, world, Isotropic, observers, params)
 
     prog = Progress(N, 5)
     
     for it in 1:max_iter
-        actives = iterate!(p, observers, params)
-
-        if (actives / p.n) < min_fill_ratio && actives > min_actives_for_repack
+        actives = iterate!(p, world, observers, params)
+        fill_ratio = actives / p.n
+        if fill_ratio < min_fill_ratio && actives > min_actives_for_repack
             repack!(p)
         end
             
@@ -403,43 +220,22 @@ function run!(p::Population, observers::Vector{Observer}, params::Params)
             update!(prog, N - actives,
                     showvalues=[(:iterations, it),
                                 (:particles, actives),
-                                (:fill_ratio, actives / p.n)])
+                                (:fill_ratio, fill_ratio)])
         end
     end
 end
 
 
-"""
-    observeall!(p, observers, params)
+const count = Int64[]
 
-Calculate the contribution of photons that are not scattered at all.
-This function is called only once after the photon population has been 
-initialized.
-"""
-function observeall!(p::Population, observers::Vector{Observer}, params::Params)
-    for i in 1:p.n
-        # This should not be neccesary but it's best to keep it just in case
-        p.isactive[i] || continue
-
-        for o in observers
-            # Since we have initialized all photons isotropically,
-            # now it shouldn't matter which phase function we use.
-            # For performance reason it seems it best to use one already
-            # defined one and we opt for Rayleigh.
-            observeone!(o, Rayleigh, p.r[i], p.μ[i], p.t[i], params)
-        end
-    end
-end
-
-
-const count = zeros(Int64, Threads.nthreads())
 """
     iterate!(p, observers, params)
 
 Iterate over all particles in the population `p` and advance them, including
 their eventual observation by `observers`.
 """
-function iterate!(p::Population, observers::Vector{Observer}, params::Params)
+function iterate!(p::Population, world::World, observers::Vector{Observer},
+                  params::Params)
     # Active particles
     # c::Int64 = 0
     
@@ -451,23 +247,25 @@ function iterate!(p::Population, observers::Vector{Observer}, params::Params)
             count[Threads.threadid()] += 1
 
             # Propagate
-            l = travel(p.r[i][3], p.μ[i][3], params)
+            l = travel_null(p.r[i], p.μ[i], world, params)
         
             p.r[i] = p.r[i] + p.μ[i] * l
             p.t[i] += l / co.c
         
             # Check if inside the domain
-            if !indomain(p.r[i], params)
+            if !inside(world.domain, p.r[i])
                 p.isactive[i] = false
                 continue
             end
 
             # Choose scattering type
-            scat = choosescat(p.r[i][3], params)
+            scat = choosescat(p.r[i], world, params)
         
             # Accumulate observations
-            for o in observers
-                observeone!(o, scat, p.r[i], p.μ[i], p.t[i], params)
+            if p.r[i][3] > params.zmin
+                for o in observers
+                    observeone!(o, world, scat, p.r[i], p.μ[i], p.t[i], params)
+                end
             end
             
             # Scatter and check if absorbed
@@ -475,6 +273,92 @@ function iterate!(p::Population, observers::Vector{Observer}, params::Params)
         end
     end
     sum(count)
+end
+
+
+"""
+    observeone!(o, p, r, μ, t, params)
+
+Check one particle and one observer and add the particle's contribution to
+the timeline and image.
+
+NOTE: Absorption is not considered here: it would simply add a factor ω₀
+"""
+@inline @fastmath function observeone!(o::Observer, w::World, p::Function,
+                                       r, μ, t, params::Params)
+    @unpack g, N, Qext, νray_ground, H, radius = params
+    # Distance to the observer
+    sobs = norm(o.r - r)
+    
+    # Director to the observer
+    μobs = (o.r - r) / sobs
+
+    μscat = μ ⋅ μobs
+
+    # Optical depth to the observer
+    ν(r::Point) = (inside(w.cloud, r) ? (Qext * π * radius^2 * w.nfunc(r))
+                   : zero(Float64))
+
+    τmie = optpath(w.cloud, ν, r, o.r)
+
+    # Optical depth to the observer from Rayleigh scattering
+    τray = νray_ground * H / μobs[3] * (exp(-r[3] / H) - exp(-o.r[3] / H))
+
+    τ = τmie + τray
+    
+    # The probability dens that the photon reaches the cloud top w/o scattering
+    # NB: p(μ) gives the scattering probablity per unit solid angle,
+    # imagine that the photon is a super-particle representing N real photons. Now
+    # - the number of photons dispersed in a solid angle dΩ is then N p(μ) dΩ,
+    # - the surface at the observer subtended by this solid angle is s^2 dΩ.
+    # So the number of photons per unit surface at the observer is
+    # N p(μ) / s^2.  To this we have to add an attenuation factor exp(-s / Λ).
+    f = p(g, μscat) * exp(-τ) / (sobs^2 * N)
+    
+    # Now find time of observation if the particle manages to escape
+    tobs = t + sobs / co.c
+
+    tid = Threads.threadid()
+    
+    # Update the observation curve
+    ind = 1 + Int64(fld(tobs, o.δt))
+    if ind <= size(o.obs, 1)
+        @inbounds o.obs[ind, tid] += f / o.δt
+    end 
+
+    # Now update the image at the given pixels
+    px = 1 + Int64(fld(μobs[1] / μobs[3] + o.umax, o.δu))
+    py = 1 + Int64(fld(μobs[2] / μobs[3] + o.umax, o.δu))
+    
+    if 0 < px <= size(o.img)[1] && 0 < py <= size(o.img)[2]
+        # Note that we are not dividing here by the solid angle subtended
+        # by the pixel.
+        @inbounds o.img[px, py, tid] += f
+    end
+end
+
+observeone!(o::Observer, w, ::Type{Mie}, r, μ, t, params::Params) =
+    observeone!(o, w, phg, r, μ, t, params)
+observeone!(o::Observer, w, ::Type{Rayleigh}, r, μ, t, params::Params) =
+    observeone!(o, w, pr, r, μ, t, params)
+observeone!(o::Observer, w, ::Type{Isotropic}, r, μ, t, params::Params) =
+    observeone!(o, w, piso, r, μ, t, params)
+function observeone!(o::Observer, w, ::Type{Null}, r, μ, t, params::Params)
+end
+
+
+function observeall!(p::Population, w::World, scat::Type{<:ScatteringType},
+                     observers::Vector{Observer}, params::Params)
+    Threads.@threads for tid in 1:Threads.nthreads()
+        @inbounds for i in getrange(tid, p.n)
+            p.isactive[i] || continue
+            if p.r[i][3] > params.zmin
+                for o in observers
+                    observeone!(o, w, scat, p.r[i], p.μ[i], p.t[i], params)
+                end
+            end
+        end
+    end
 end
 
 
@@ -496,10 +380,10 @@ end
 Sample points from the unitary sphere. 
 """
 function randsphere()
-    ϕ = 2π * rand()
+    ϕ = 2π * trand()
     sinϕ, cosϕ = sincos(ϕ)
     
-    u = 2 * rand() - 1
+    u = 2 * trand() - 1
     v = sqrt(1 - u^2)
 
     @SVector [v * cosϕ, v * sinϕ, u]
@@ -507,49 +391,52 @@ end
 
 
 """
-    travel(z, μz, params)
+    travel(r, μ, params)
 
-Sample the travel distance a single particle given its position `z` and 
-z-component of its direction `μz`.
+Sample the travel distance a single particle given its position `r` and 
+its direction `μ`.  This function considers the interfaces in the cloud geometry
+and limits the particle movement up to the next interface.  It also considers
+different collision rates in and out of the cloud.
+
+DEPRECATED: DOES NOT WORK
 """
-@fastmath function travel(z, μz, params::Params)
-    @unpack cloud_top, ν_cloud, Λ_cloud, ν_above, Λ_above = params
+@fastmath function travel(r, μ, world::World, params::Params; ϵ=1e-3)
+    @unpack νmax, νraymax = params
 
     # Select the optical depth to travel
-    τ = -log(rand())
-    
-    if incloud(z, params) && μz > 0
-        # Depth required to exit the cloud
-        τ0 = ν_cloud * (cloud_top - z) / μz
-        if τ < τ0
-        # Stay in the cloud
-            return Λ_cloud * τ
-        else
-            return Λ_cloud * τ0 + Λ_above * (τ - τ0)
-        end
-    end
-    
-    if incloud(z, params) && μz <= 0
-        # Stay in the cloud or leave it from below, in which case the photon
-        # is removed.
-        return Λ_cloud * τ
-    end
+    τ = -log(trand())
 
-    # The photon is outside the cloud.
-    if μz > 0
-        # Propagate upwards
-        return Λ_above * τ
-    end
+    # To check whether we use collision rates in or outside the cloud
+    # we test a point slightly ahead of the particle in its path.  This is
+    # to allow cases where the particle is exactly at an interface.
+    rp = r + (ϵ / νmax) * μ
 
-    # The photon is moving downwards and may enter the cloud
-    τ0 = ν_above * (cloud_top - z) / μz
-    if τ < τ0
-        return Λ_above * τ
-    else
-        return Λ_above * τ0 + Λ_cloud * (τ - τ0)
-    end
+    # Still to do: use local collision rates.
+    ν = inside(world.cloud, rp) ? νmax : νraymax
 
+    l = τ / ν
+    rend = r + l * μ
+
+    minimizer = MinAccumulator(1.0)
+    interfaces!(minimizer, world.cloud, r, rend)
+    l * minimizer.value
 end
+
+
+"""
+    travel_null(r, μ, params)
+
+Sample the travel distance a single particle given its position `r` and 
+its direction `μ`.
+"""
+@fastmath function travel_null(r, μ, world::World, params::Params; ϵ=1e-3)
+    @unpack νmax = params
+
+    # Select the optical depth to travel
+    τ = -log(trand())
+    τ / νmax
+end
+
 
 
 """ 
@@ -557,102 +444,25 @@ end
 
 Choose the type of scattering event, depending on the altitude `z`. 
 """
-@inline function choosescat(z, params::Params)
-    @unpack cloud_base, cloud_top, ν_cloud, ν_above = params
-    @unpack νMie, νRay_base, νRay_top, H = params
-    indomain(z, params) || return Null
+@inline function choosescat(r, world::World, params::Params)
+    @unpack νmax, Qext, nair, H, σray, νray_ground, radius = params
+    inside(world.domain, r) || return Null
+
+    νMie = (inside(world.cloud, r) ?
+            Qext * π * radius^2 * world.nfunc(r) :
+            Float64(0))
+    νRay = νray_ground * exp(-r[3] / H)
     
-    if incloud(z, params)
-        ξ = rand() * ν_cloud
-        if ξ <= νMie
-            return Mie
-        elseif ξ <= (νMie + νRay_base * exp(-(z - cloud_base) / H))
-            return Rayleigh
-        else
-            return Null
-        end
+    ξ = trand() * νmax
+
+    if ξ <= νMie
+        return Mie
+    elseif ξ <= (νMie + νRay)
+        return Rayleigh
     else
-        ξ = rand() * ν_above
-        if ξ < νRay_top * exp(-(z - cloud_top) / H)
-            return Rayleigh
-        else
-            return Null
-        end
+        return Null
     end
 end
-
-
-"""
-    observeone!(o, p, r, μ, t, params)
-
-Check one particle and one observer and add the particle's contribution to
-the timeline and image.
-
-NOTE: Absorption is not considered here: it would simply add a factor ω₀
-"""
-@inline @fastmath function observeone!(o::Observer, p,
-                                       r, μ, t, params::Params)
-    @unpack cloud_top, g, N, H, σ, nground, νMie = params
-    @unpack max_mie_depth = params
-    
-    (r[3] > cloud_top - max_mie_depth / νMie) || return
-    
-    # Distance to the observer
-    sobs = norm(o.r - r)
-    
-    # Director to the observer
-    μobs = (o.r - r) / sobs
-
-    μscat = μ ⋅ μobs
-
-    # Optical depth to the observer from Rayleigh scattering
-    τ = σ * nground * H / μobs[3] * (exp(-r[3] / H) - exp(-o.r[3] / H))
-
-    if incloud(r, params)
-        # Find the distance to the cloud top
-        s = sobs * (cloud_top - r[3]) / (o.r[3] - r[3])
-
-        # Depth due to Mie
-        τ += s * νMie
-    end
-    
-    # The probability dens that the photon reaches the cloud top w/o scattering
-    # NB: p(μ) gives the scattering probablity per unit solid angle,
-    # imagine that the photon is a super-particle representing N real photons. Now
-    # - the number of photons dispersed in a solid angle dΩ is then N p(μ) dΩ,
-    # - the surface at the observer subtended by this solid angle is s^2 dΩ.
-    # So the number of photons per unit surface at the observer is
-    # N p(μ) / s^2.  To this we have to add an attenuation factor exp(-s / Λ).
-    f = p(g, μscat) * exp(-τ) / (sobs^2 * N)
-    
-    # Now find time of observation if the particle manages to escape
-    tobs = t + sobs / co.c
-
-    tid = Threads.threadid()
-    
-    # Update the observation curve
-    ind = 1 + Int64(fld(tobs, o.δt))
-    if ind <= size(o.obs, 1)
-        @inbounds o.obs[ind, tid] += f / o.δt
-    end
-
-    # Now update the image at the given pixels
-    px = 1 + Int64(fld(μobs[1] + o.μmax, o.δμ))
-    py = 1 + Int64(fld(μobs[2] + o.μmax, o.δμ))
-    
-    if 0 < px <= size(o.img)[1] && 0 < py <= size(o.img)[2]
-        # Note that we are not dividing here by the solid angle subtended
-        # by the pixel.
-        @inbounds o.img[px, py, tid] += f
-    end
-end
-
-observeone!(o::Observer, ::Type{Mie}, r, μ, t, params::Params) =
-    observeone!(o, phg, r, μ, t, params)
-observeone!(o::Observer, ::Type{Rayleigh}, r, μ, t, params::Params) =
-    observeone!(o, pr, r, μ, t, params)
-function observeone!(o::Observer, ::Type{Null}, r, μ, t, params::Params) end
-
 
 
 """ 
@@ -666,10 +476,10 @@ NB: This function breaks down if μ is directed exactly along z.
     @unpack ω₀, g = params
 
     # Return false if the particle is absorbed
-    rand() < ω₀ || return μ, false
+    trand() < ω₀ || return μ, false
 
-    ϕ = 2π * rand()
-    cosθ = μhg(g, rand())
+    ϕ = 2π * trand()
+    cosθ = μhg(g, trand())
 
     turn(μ, cosθ, ϕ), true
 end
@@ -683,8 +493,8 @@ which is returned.
 NB: This function breaks down if μ is directed exactly along z.
 """
 @inline @fastmath function scatterone(μ, ::Type{Rayleigh}, params)
-    ϕ = 2π * rand()
-    cosθ = μr(rand())
+    ϕ = 2π * trand()
+    cosθ = μr(trand())
 
     turn(μ, cosθ, ϕ), true
 end
@@ -748,14 +558,112 @@ function repack!(p::Population)
 end
 
 
-# For static compilation. See PackageCompiler.jl docs
-Base.@ccallable function julia_main(ARGS::Vector{String})::Cint
-    runfromfile(ARGS[1])
-    return 0
+const INTERFACE_LISTS = Vector{Float64}[]
+
+@noinline function init_interface_list()
+    # Allocate the list on the thread's own heap lazily
+    # instead of the master thread heap to minimize memory conflict.
+    tid = Threads.threadid()
+    INTERFACE_LISTS[tid] = Float64[0.0]
+    INTERFACE_LISTS[tid]
 end
 
-if abspath(PROGRAM_FILE) == @__FILE__
-    runfromfile(ARGS[1])
+@inline function get_interface_list()
+    @inbounds begin
+        tid = Threads.threadid()
+        isassigned(INTERFACE_LISTS, tid) || return init_interface_list()
+        resize!(INTERFACE_LISTS[tid], 1)
+        INTERFACE_LISTS[tid]
+    end
 end
 
+""" 
+Compute the optical path between points `a` and `b` in a given geometry
+`geom` and with a position-dependent collision rate `ν`.
+"""
+function optpath(geom, ν::Function, a::Point, b::Point)
+    v = ListAccumulator(get_interface_list())
+
+    interfaces!(v, geom, a, b)
+    sort!(v.list)
+
+    push!(v.list, 1.0)
+    
+    f(s) = ν((1 - s) * a + s * b)
+    
+    L = norm(a - b)
+    # path = L * quadgk(f, 0., v..., 1.0,
+    #                   atol=1e-3, rtol=1e-2, order=3)[1]
+    path = L * quadgauss(f, v.list)
+    path
 end
+
+
+# Pre-computed order-3 quadrature
+const quadrule = (@SVector([-0.7745966692414834,
+                            0.0,
+                            0.7745966692414834]),
+                  @SVector([0.5555555555555556,
+                            0.8888888888888888,
+                            0.5555555555555556]))
+@fastmath function quadgauss(f::Function, x)
+    xq, wq = quadrule
+    x1 = x[1]
+
+    I = zero(x1)
+    for ix in 2:length(x)
+        h = 0.5 * (x[ix] - x1)
+        Ip = zero(x1)
+        
+        for i in 1:length(wq)
+            @inbounds Ip += wq[i] * f(x1 + (1 + xq[i]) * h)
+        end
+        x1 = x[ix]
+        I += h * Ip            
+    end
+    I
+end
+
+
+""" 
+Build a function that returns a fixed number `ν0` inside the geometry 
+`geom` and zero otherwise.
+"""
+function constinside(geom, ν0)
+    function ν(r::Point)
+        inside(geom, r) ? ν0 : zero(ν0)
+    end
+end
+
+
+const RNG = MersenneTwister[]
+
+@noinline function init_thread_rng()
+    # Allocate the random number generator on the thread's own heap lazily
+    # instead of the master thread heap to minimize memory conflict.
+    RNG[Threads.threadid()] = MersenneTwister(Threads.threadid())
+end
+
+
+@inline function trand()
+    @inbounds begin
+        tid = Threads.threadid()
+        isassigned(RNG, tid) || init_thread_rng()
+        return rand(RNG[tid])
+    end
+end
+
+
+function __init__()
+    nth = Threads.nthreads()
+    resize!(RNG, nth)
+    resize!(INTERFACE_LISTS, nth)
+    resize!(count, nth)
+    
+    # for tid in 1:nth
+    #     RNG[tid] = MersenneTwister(tid)
+    # end
+end
+
+
+end # module
