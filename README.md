@@ -28,6 +28,9 @@ or, ig you prefer to do everything from the julia prompt,
 julia> include("samples/sample.jl")
 ```
 
+If you get an error about StaticArrays, simply do as error message suggests and
+install StaticArrays.
+
 If the simulation finishes correctly it produces a file called `sample.h5` that contains the output data from the simulation. To view this output you can use one of the scripts contained in the `util` folder of the repo. For example to plot the simulated photometer data of observer one uses
 
 ```bash
