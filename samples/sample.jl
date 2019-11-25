@@ -16,7 +16,7 @@ the new file name.  You can also run from the command line as e.g.
 
 """
 
-using CloudScat2
+using CloudScat
 using StaticArrays
 
 const co = CloudScat2.constants
