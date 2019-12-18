@@ -8,6 +8,8 @@ using HDF5
 using YAML
 using Parameters
 using Formatting
+using Logging
+using Dates
 using ProgressMeter
 using Random
 
@@ -18,7 +20,6 @@ include("geometry.jl")
 include("phasefuncs.jl")
 include("constants.jl")
 include("rayleigh.jl")
-include("logger.jl")
 
 const co = constants
 
@@ -109,6 +110,11 @@ end
 
 function main(params::Params, world::World, observers::Vector{Observer};
               saveto::Union{String,Nothing}=nothing)
+    function fmt(level, _module, group, id, file, line)
+        return (:blue, format("{:<23}:", Dates.now()), "")
+    end
+    logger = ConsoleLogger(meta_formatter=fmt)
+
     with_logger(logger) do
         # Print a list of parameters
         @info "Input parameters:" params
