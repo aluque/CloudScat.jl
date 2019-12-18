@@ -21,11 +21,16 @@ def get_parser():
                         default=1,
                         help="Observer number (1-based)")
 
-    parser.add_argument("--nofit",
-                        action="store_true",
-                        help="Remove the fits",
-                        default=False)
-
+    parser.add_argument("--L",
+                        action="store",
+                        type=float,
+                        help="Use this distance and plot the model",
+                        default=None)
+    
+    parser.add_argument("--output", "-o",
+                        action="store",
+                        help="Output file",
+                        default=None)
     return parser
 
 
@@ -33,10 +38,23 @@ def main():
     parser = get_parser()                        
     args = parser.parse_args()
 
-    plotone(args.input, args.observer, fits=not args.nofit)
+    plotone(args.input, args.observer)
+
+    if args.L is not None:
+        plotmodel(args.input, args.observer, args.L)
+
+    plt.xlim([0, 5])
+    plt.xlabel("Time (ms)")
+    plt.ylabel("photons / m$^2$ / s / source photon")
+    plt.legend()
         
-    
-def plotone(fname, obs, fits=True):
+    if args.output is not None:
+        plt.savefig(args.output)
+    else:
+        plt.show()
+        
+
+def plotmodel(fname, obs, L):
     fp = h5py.File(fname, "r")
     
     tl = np.array(fp[f"obs{obs:05d}/timeline"])
@@ -44,53 +62,55 @@ def plotone(fname, obs, fits=True):
     obs = fp[f"obs{obs:05d}"]
     params = fp["parameters"]
 
-    n, Qext, r = (params.attrs[k] for k in ("nscat", "Qext", "radius"))
-    g, cloud_top, z, om0 = (params.attrs[k] for k in ("g", "cloud_top",
-                                                      "source_altitude",
-                                                      "ω₀"))
+    g, n, Qext, r, om0 = (params.attrs[k] for k in ("g",
+                                                    "nscat",
+                                                    "Qext",
+                                                    "radius",
+                                                    "ω₀"))
     
-    L = cloud_top - z
     lmbd = 1 / (n * Qext * np.pi * r**2)
     D = lmbd * co.c / (3 * (1 - g * om0))
     tau = L**2 / (4 * D)
     alpha = tau * (1 - om0) * co.c / lmbd
-    
-    print("From parameters:")
-    print(f"  g     = {g}")
-    print(f"  tau   = {tau}")
-    print(f"  alpha = {alpha}")
+    nu = (1 - om0) * co.c / lmbd
     
     tshift = t - obs.attrs["delay"]
+    R = obs.attrs["delay"] * co.c
 
-    #norm, tstart, tauf, alphaf = exittime_fit(tshift, tl)
+    # The normalization here is not 1 / 4 \pi R^2 because of Lambert's cosine
+    # law.  
+    norm = 1 / (np.pi * R**2)
+    signal = exittime(tshift, 0.0, tau, alpha)
 
-    norm, tstart, tauf, alphaf = exittime_fit2(tshift, tl)
+    dt = tshift[1] - tshift[0]
+    print("Norm of the analytical expression:", dt * sum(signal))
     
-    print("From fit:")
-    print(f"  tau   = {tauf}")
-    print(f"  alpha = {alphaf}")
+    plt.plot(tshift / co.milli, norm * signal,
+             label="Point source" % obs.attrs["shift"], color="r")
+
+    fp.close()
+
+    
+def plotone(fname, obs):
+    fp = h5py.File(fname, "r")
+    
+    tl = np.array(fp[f"obs{obs:05d}/timeline"])
+    t = np.array(fp[f"obs{obs:05d}/t"])
+    obs = fp[f"obs{obs:05d}"]
+    params = fp["parameters"]
+
+    tshift = t - obs.attrs["delay"]
+
+    dt = tshift[1] - tshift[0]
+    R = obs.attrs["delay"] * co.c
+
+    print("Norm of the MC results:", dt * sum(tl) * (4 * np.pi * R**2))
 
     plt.plot(tshift / co.milli,
-             tl, label="Model" % obs.attrs["shift"])
+             tl, label="Simulation")
 
-    if fits:
-        plt.plot(tshift / co.milli,
-                 norm * exittime(tshift, tstart, tauf, alphaf),
-                 label="Fit" % obs.attrs["shift"], color="k")
-
-        plt.plot(tshift / co.milli,
-                 norm * exittime(tshift, 0.0, tau, alpha),
-                 label="Analytical" % obs.attrs["shift"], color="r")
-
-        
-    plt.xlabel("Time (ms)")
-    plt.ylabel("photons / m$^2$ / s / source photon")
-    plt.legend()
-    
-    #plt.xlim([1e-2, 15])
-    #plt.loglog()
-    plt.show()
-
+    fp.close()
+ 
 
 def exittime(t, tstart, tau, alpha):
     t1 = t - tstart
@@ -99,39 +119,7 @@ def exittime(t, tstart, tau, alpha):
          * np.exp(-alpha * t1 / tau) / np.sqrt(np.pi))
     return np.where(w > 0, w, 0)
 
-    
-def exittime_fit(t, s):
-    """ Fit a signal `s` sampled at times `t` to a exit-time times absorption
-    curve. Returns:
-    norm: the multiplying factor.
-    t0: the starting time of the signal
-    tau: the characteristic exit time
-    alpha: the absroption rate in terms of tau.
-    """
-    # Assuming uniform sampling
-    dt = t[1] - t[0]
-    
-    norm = sum(s)
 
-    tavg = sum(t * s) / norm
-    tdev2 = sum((t - tavg)**2 * s) / norm
-    tskew = sum((t - tavg)**3 * s) / norm / tdev2**1.5
-    
-    alpha = (3 / (np.sqrt(2) * tskew))**4
-    tau = np.sqrt(2 * alpha**1.5 * tdev2)
-
-    t0 = tavg - tau / np.sqrt(alpha)
-    
-    return dt * norm, t0, tau, alpha
-    
-
-def exittime_fit2(t, s):
-    dt = t[1] - t[0]
-    norm = sum(s) * dt
-    
-    popt, pcov = curve_fit(exittime, t, s / norm, p0=[0.0, 5e-4, 0.05]) 
-
-    return (norm, *popt)
 
 
 if __name__ == '__main__':
