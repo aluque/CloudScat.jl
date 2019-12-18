@@ -90,8 +90,8 @@ function run()
 
     # The saveto option specifies the output file.  Leave it as it is to base
     # the filename on the name of this file specifying the parameters.
-    CloudScat2.main(params, world, observers,
-                    saveto="$(basename).h5")
+    CloudScat.main(params, world, observers,
+                   saveto="$(basename).h5")
 end
 
 # Check if the code has been 'included' or run from the shell.  In the latter
