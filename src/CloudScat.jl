@@ -18,6 +18,7 @@ include("geometry.jl")
 include("phasefuncs.jl")
 include("constants.jl")
 include("rayleigh.jl")
+include("logger.jl")
 
 const co = constants
 
@@ -108,21 +109,23 @@ end
 
 function main(params::Params, world::World, observers::Vector{Observer};
               saveto::Union{String,Nothing}=nothing)
-    # Print a list of parameters
-    @info "Input parameters:" params
-    
-    @info "Running with $(Threads.nthreads()) thread(s) (JULIA_NUM_THREADS)"
-    
-    @info "Initializing the photon population"
-    p = Population(params.N)
-    initphotons!(p, params)
+    with_logger(logger) do
+        # Print a list of parameters
+        @info "Input parameters:" params
+        
+        @info "Running with $(Threads.nthreads()) thread(s) (JULIA_NUM_THREADS)"
+        
+        @info "Initializing the photon population"
+        p = Population(params.N)
+        initphotons!(p, params)
 
-    # Run the MC simulation
-    @info "Running the MC simulation"
-    run!(p, world, observers, params)
-
-    !isnothing(saveto) && save(saveto, p, observers, params)
-    p, observers
+        # Run the MC simulation
+        @info "Running the MC simulation"
+        run!(p, world, observers, params)
+        
+        !isnothing(saveto) && save(saveto, p, observers, params)
+        p, observers
+    end
 end
 
 

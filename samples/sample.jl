@@ -20,16 +20,6 @@ using CloudScat
 
 const co = CloudScat.constants
 
-using Logging
-using Dates
-using Formatting
-
-function fmt(level, _module, group, id, file, line)
-    return (:blue, format("{:<23}:", Dates.now()), "")
-end
-
-const logger = ConsoleLogger(meta_formatter=fmt)
-
 function run()
     params = init_params(
         # NUmber of simulated photons
@@ -104,6 +94,6 @@ function run()
                     saveto="$(basename).h5")
 end
 
-with_logger(logger) do
-    run()
-end
+# Check if the code has been 'included' or run from the shell.  In the latter
+# case, run the simulation.
+isinteractive() || run()
