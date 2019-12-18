@@ -17,9 +17,8 @@ the new file name.  You can also run from the command line as e.g.
 """
 
 using CloudScat
-using StaticArrays
 
-const co = CloudScat2.constants
+const co = CloudScat.constants
 
 using Logging
 using Dates
@@ -43,8 +42,8 @@ function run()
         # to source_b.  Within this line photons are distributed uniformly with
         # initially random, isotropic directions.  To use a point source set
         # source_b = source_a
-        source_a = @SVector([0, 0, 10 * co.kilo]),
-        source_b = @SVector([0, 0, 10 * co.kilo]),
+        source_a = [0, 0, 10 * co.kilo],
+        source_b = [0, 0, 10 * co.kilo],
 
         # Radius of the scattering particles
         radius = 10e-6,     
@@ -58,6 +57,8 @@ function run()
     # World geometry
     # Describe the cloud geometry here.  It may consist in combinations of
     # geometrical figures (cylinders, spheres, cones, semi-planes)
+    #
+    # A cylinder is defined as Cylinder(zbottom, ztop, xcenter, ycenter, radius)
     c1 = Cylinder(7 * co.kilo,  12 * co.kilo, 0, 0, 200 * co.kilo)
     cloud = c1
     
