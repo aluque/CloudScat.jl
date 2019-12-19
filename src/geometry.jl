@@ -324,6 +324,16 @@ function inside(c::Cylinder, a::Point)
     (z1 < za < z2)
 end
 
+function inside(c::Cone, a::Point)
+    (c.bottom <= a[3] <= c.top) || return false
+    
+    (xa, ya, za) = a .- @SVector [c.xv, c.yv, c.zv]
+    m = c.m
+
+    (xa^2 + ya^2 > m^2 * za^2) && return false
+    true
+end
+
 
 inside(p::Plane, a::Point) = (p.up == (a[3] > p.z))
 
