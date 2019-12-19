@@ -1,6 +1,9 @@
 """ Geometrical shapes. """
 
-export Point, Shape, Cylinder, Sphere, Plane, Empty, shapediff, inside
+using LinearAlgebra, CoordinateTransformations
+
+export Point, Shape, Cylinder, Sphere, Cone, Plane, Empty, shapediff, inside,
+    TransformedShape
 
 const Point = SVector{3, Float64}
 
@@ -25,6 +28,22 @@ struct Cylinder <: Shape
     xc::Float64
     yc::Float64
     R::Float64
+end
+
+
+"""
+A Cone with a vertical axis and `bottom` < z < `top`, with vertex 
+at (`xv`, `yv`, `zv`) and slope m with 
+sqrt((x - xv)^2 + (y - yv)^2) = m (z - zv).
+"""
+struct Cone <: Shape
+    bottom::Float64
+    top::Float64
+
+    xv::Float64
+    yv::Float64
+    zv::Float64
+    m::Float64
 end
 
 
@@ -63,8 +82,25 @@ end
 
 shapediff(s1, s2) = ShapeSubstract(s1, s2)
 
+
+# Shortcuts for unions and substractiong
 Base.:-(s1::Shape, s2::Shape) = shapediff(s1, s2)
 Base.:+(s1::Shape, rest::Shape...) = union(s1, rest...)
+
+
+""" Transformed shape after a transformation or shift. """
+struct TransformedShape{T<:AbstractAffineMap, S<:Shape} <: Shape
+    trans::T
+    inv::T
+    shape::S
+    function TransformedShape(trans::T, shape::S) where
+        {T<:AbstractAffineMap, S<:Shape}
+
+        inv_ = inv(trans)
+        new{T, S}(trans, inv_, shape)
+    end
+end
+
 
 # For some reason, dot for SVectors of size 3 is much slower than this
 # explicit computation.
@@ -89,6 +125,13 @@ end
 @inline accum!(a::MinAccumulator, x) = (x < a.value) && (a.value = x)
 
 
+# Just for debugging
+struct ShowAccumulator <: Accumulator
+end
+
+accum!(a::ShowAccumulator, x) = @show x
+
+
 """ 
 Compute the intersection points between a shape `c` and the line joining
 points `a` and `b`.  Each intersection point s is used in the accumulator vwhere the intersection point is
@@ -96,15 +139,19 @@ p = (1-s)a + s b
 """ 
 @fastmath function interfaces!(v::Accumulator, s::Sphere, a::Point, b::Point)
     (xc, yc, zc) = (s.xc, s.yc, s.zc)
-    (xa, ya, za) = a
-    (xb, yb, zb) = b
+    (xa, ya, za) = a .- @SVector [s.xc, s.yc, s.zc]
+    (xb, yb, zb) = b .- @SVector [s.xc, s.yc, s.zc]
 
-    # These are traditinal a, b, c in the quadratic eq. but a, b are already
+    a2 = xa^2 + ya^2 + za^2
+    b2 = xb^2 + yb^2 + zb^2
+    ab = xa * xb + ya * yb + za * zb
+    
+    # These are traditional a, b, c in the quadratic eq. but a, b are already
     # in use.
-    α = (xa - xb)^2 + (ya - yb)^2 + (za - zb)^2
-    β = 2 * ((xb - xa) * (xa - xc) + (yb - ya) * (ya - yc) +
-             (zb - za) * (za - zc))
-    γ = (xa - xc)^2 + (ya - yc)^2 + (za - zc)^2
+    α = a2 + b2 - 2 * ab
+    β = -2*a2 + 2 * ab
+    γ = a2 - s.R^2
+
     Δ = β^2 - 4 * α * γ
 
     (Δ >= 0) || return nothing
@@ -164,6 +211,52 @@ end
 end
 
 
+@fastmath function interfaces!(v::Accumulator, c::Cone, a::Point, b::Point)
+    # Shift everything wrt the cone vertex
+    (xa, ya, za) = a .- @SVector [c.xv, c.yv, c.zv]
+    (xb, yb, zb) = b .- @SVector [c.xv, c.yv, c.zv]
+    m = c.m
+    m2 = m^2
+    
+    at2 = xa * xa + ya * ya
+    bt2 = xb * xb + yb * yb
+    adotb = xa * xb + ya * yb
+
+    # with this we define a quadratic equation on s with coeffs
+    α = at2 + bt2 - 2 * adotb - m2 * (za^2 + zb^2 - 2 * za * zb)
+    β = -2 * at2 + 2 * adotb - m2 * (-2 * za^2 + 2 * za * zb)
+    γ = at2 - m2 * za^2
+
+    if α != 0
+        Δ = sqrt(β^2 - 4 * α * γ)
+        s1, s2 = (-β - Δ) / (2 * α), (-β + Δ) / (2 * α)
+    else
+        # Unfortunately we must allow the possibility that the line connecting
+        # a and b passes though the vertex of the cone.  In that case
+        # the line is either almost always inside or almost always outside
+        # it.
+        s1, s2 = -Inf, za / (za - zb)
+    end
+    
+    # Make sure that s1 < s2
+    (s1 < s2) || ((s1, s2) = (s2, s1))
+    
+    st = (c.top - za - c.zv) / (zb - za)    
+    sb = (c.bottom - za - c.zv) / (zb - za)
+
+    (0 < st < 1) && (s1 < st < s2) && accum!(v, st)
+    (0 < sb < 1) && (s1 < sb < s2) && accum!(v, sb)
+    
+    z1 = (1 - s1) * za + s1 * zb + c.zv
+    z2 = (1 - s2) * za + s2 * zb + c.zv
+
+    (0 < s1 < 1 && c.bottom < z1 < c.top) && accum!(v, s1)
+    (0 < s2 < 1 && c.bottom < z2 < c.top) && accum!(v, s2)
+
+    nothing
+end
+
+    
 function interfaces!(v::Accumulator, p::Plane, a::Point, b::Point)
     # Aliases to simplify the formulas
     (xa, ya, za) = a
@@ -201,6 +294,14 @@ function interfaces!(v::Accumulator, s::ShapeSubstract, a::Point, b::Point)
     interfaces!(v, s.shape1, a, b)
     interfaces!(v, s.shape2, a, b)
     nothing
+end
+
+function interfaces!(v::Accumulator, s::TransformedShape,
+                     a::Point, b::Point)
+    at = s.inv(a)
+    bt = s.inv(b)
+    
+    interfaces!(v, s.shape, at, bt)
 end
 
 
@@ -270,3 +371,7 @@ function inside(u::ShapeIntersect, a::Point)
 end
 
 inside(s::ShapeSubstract, a::Point) = inside(s.shape1, a) && !inside(s.shape2, a)
+
+function inside(s::TransformedShape, a::Point)
+    inside(s.shape, s.inv(a))
+end
