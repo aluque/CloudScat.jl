@@ -18,18 +18,26 @@ You can exit the package manager by pressing backspace at the beginning of the p
 
 ## Use
 
-Look at the file `samples/sample.jl` for an example computation.  You can run it
+### Provided examples
+
+The `samples` folder contains example computations. It is recommended that you 
+start by copying these files into another folder and use them as templates for 
+your simulations.  After you have installed the CloudScat package you can find
+the location of the `samples` folder by
+```julia
+> using CloudScat
+> CloudScat.SAMPLES_PATH
+```
+
+The file `sample.jl` contains a simple example.  You can run it
 with
 ```bash
-> julia --color=yes samples/sample.jl
+> julia --color=yes sample.jl
 ```
 or, ig you prefer to do everything from the julia prompt,
 ```julia
-julia> include("samples/sample.jl")
+julia> include("sample.jl")
 ```
-
-If you get an error about StaticArrays, simply do as error message suggests and
-install StaticArrays.
 
 If the simulation finishes correctly it produces a file called `sample.h5` that contains the output data from the simulation. To view this output you can use one of the scripts contained in the `util` folder of the repo. For example to plot the simulated photometer data of observer one uses
 
@@ -42,4 +50,23 @@ To see the image recorded by the same observer use
 > python plot_image input_file.h5 --observer=1
 ```
 
+### Complex geometries
 
+CloudScat can manage very complex cloud geometries, defined as combination and
+linear transformations of a set of elementary shapes. Full details are given
+in the example file `cloud_geometry.jl`. If you want to define new geometrical
+shapes beyond those provided by default, look at `src/geometry.jl`. A geometry 
+type must define method to compute (quickly if possible) intersections between 
+the defined shape and a straight line and to test whether a point is inside the 
+figure.
+
+### Parallel computations
+
+If your machine contains several cores you can benefit from using several threads for your simulation. This can be accomplished by setting the environment variable
+`JULIA_NUM_THREADS` to the number of threads.  For example, for 4 threads invoke
+julia as e.g.
+```bash
+> JULIA_NUM_THREADS=4 julia --color=yes sample.jl
+```
+My experience shows that for more than about 4 threads the computation becomes
+limited by memory access so you would not gain much with a larger `JULIA_NUM_THREADS`.  However, you can check is this holds true also in your machine.
