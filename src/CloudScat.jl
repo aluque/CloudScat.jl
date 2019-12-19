@@ -22,7 +22,7 @@ include("constants.jl")
 include("rayleigh.jl")
 
 const co = constants
-
+const SAMPLES_PATH = normpath(joinpath(@__DIR__, "..", "samples"))
 
 # For the dynamical dispatch we define types of collisions but they
 # currently don't do anything
