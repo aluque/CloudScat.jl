@@ -68,11 +68,8 @@ function run()
     # on performance.
 
     observers = [Observer(
-        # Altitude of the observer
-        altitude = 400 * co.kilo,
-        
-        # Horizontal distance
-        shift = 0,
+        # Location of the observer
+        position = [0, 0, 400 * co.kilo],
         
         # Sampling interval
         tsample = 1e-5,
@@ -80,7 +77,7 @@ function run()
         # Collected samples
         nsamples = 10000,
         
-        # fov of the camera
+        # fov of the camera (half of the diagonal fov).
         fov = 40,
         
         # camera pixels

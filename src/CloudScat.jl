@@ -93,13 +93,13 @@ end
 
 Create a observer structure from a dictionary of observer properties.
 """
-function Observer(;shift, altitude, fov, pixels, tsample, nsamples)
-    loc = SVector(shift, 0, altitude)
+function Observer(;position, fov, pixels, tsample, nsamples)
+    sposition = SVector{3, Float64}(position)
     umax = tan(deg2rad(fov)) / sqrt(2)
     δu = 2 * umax / pixels
     nt = Threads.nthreads()
 
-    obs = Observer(loc,
+    obs = Observer(sposition,
                    tsample,
                    δu,
                    umax,
@@ -340,9 +340,11 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     py = 1 + Int64(fld(μobs[2] / μobs[3] + o.umax, o.δu))
     
     if 0 < px <= size(o.img)[1] && 0 < py <= size(o.img)[2]
-        # Note that we are not dividing here by the solid angle subtended
-        # by the pixel.
-        @inbounds o.img[px, py, tid] += f
+        # The solid angle subtended by the pixel is roughly
+        # δu^2 * (cos θ)^3, where θ is the angle with the vertical.
+        # Actually cos θ = μobs[3].  The units would be here
+        # photons / sr / source photon.
+        @inbounds o.img[px, py, tid] += f / (o.δu^2 * μobs[3]^3)
     end
 end
 
