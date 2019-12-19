@@ -26,7 +26,7 @@ const co = CloudScat.constants
 function run()
     params = init_params(
         # NUmber of simulated photons
-        N = 400000,
+        N = 600000,
 
         # The wavelength of the scattered light
         λ = 337 * co.nano,
@@ -35,8 +35,8 @@ function run()
         # to source_b.  Within this line photons are distributed uniformly with
         # initially random, isotropic directions.  To use a point source set
         # source_b = source_a
-        source_a = [0, 0, 10 * co.kilo],
-        source_b = [0, 0, 10 * co.kilo],
+        source_a = [0, 0, 8 * co.kilo],
+        source_b = [0, 0, 13 * co.kilo],
 
         # Radius of the scattering particles
         radius = 10e-6,     
@@ -116,7 +116,7 @@ function run()
     
     # Now the hole that we will substract from the whole, slightly shifted in the
     # y direction.
-    hole = Sphere(0, 1 * co.kilo, 15 * co.kilo, 2 * co.kilo)
+    hole = Sphere(0, 1 * co.kilo, 15 * co.kilo, 1 * co.kilo)
     
     # Finally we combine everything together
     cloud = shapediff(union(cyl, cone, ellipsoid), hole)
@@ -138,7 +138,7 @@ function run()
 
     observers = [Observer(
         # Location of the observer
-        position = [0, 0, 400 * co.kilo],
+        position = [0, 200 * co.kilo, 400 * co.kilo],
         
         # Sampling interval
         tsample = 1e-5,
