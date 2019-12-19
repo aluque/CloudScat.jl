@@ -1,14 +1,14 @@
 """ 
-This is a sample input file for the CloudScat2 code.  To use it run julia
+This is a sample input file for the CloudScat code.  To use it run julia
 and type 
 
-julia> include("sample.jl")
+julia> include("cloud_geometry.jl"); run()
 
 The output file will be based on this file's name so to run different simulations
 you can just copy this file, change the configuration and run it as above with
 the new file name.  You can also run from the command line as e.g.
 
-> julia sample.jl
+> julia cloud_geometry.jl
 
 
 - - -
