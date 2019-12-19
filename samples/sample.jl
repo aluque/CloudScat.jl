@@ -46,7 +46,8 @@ function run()
     
     # World geometry
     # Describe the cloud geometry here.  It may consist in combinations of
-    # geometrical figures (cylinders, spheres, cones, semi-planes)
+    # geometrical figures (cylinders, spheres, cones, semi-planes).
+    # See cloud_gemoetry.jl for a more detailed description
     #
     # A cylinder is defined as Cylinder(zbottom, ztop, xcenter, ycenter, radius)
     c1 = Cylinder(7 * co.kilo,  12 * co.kilo, 0, 0, 200 * co.kilo)
