@@ -13,8 +13,8 @@ def get_parser():
     import argparse
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("input",
-                        help="HDF5 input file1")
+    parser.add_argument("input", nargs='+',
+                        help="HDF5 input file(s)")
 
     parser.add_argument("--observer",
                         type=int,
@@ -27,6 +27,14 @@ def get_parser():
                         help="Use this distance and plot the model",
                         default=None)
     
+    parser.add_argument("--xlim", "-x",
+                        help="Limits of the x-axis in ms (x0:x1)", 
+                        action='store', default=None)
+
+    parser.add_argument("--ylim", "-y",
+                        help="Limits of the z-axis (y0:y1)", 
+                        action='store', default=None)
+
     parser.add_argument("--output", "-o",
                         action="store",
                         help="Output file",
@@ -38,12 +46,23 @@ def main():
     parser = get_parser()                        
     args = parser.parse_args()
 
-    plotone(args.input, args.observer)
+    for fname in args.input:
+        plotone(fname, args.observer)
 
-    if args.L is not None:
-        plotmodel(args.input, args.observer, args.L)
+        if args.L is not None:
+            plotmodel(fname, args.observer, args.L)
 
-    plt.xlim([0, 5])
+    
+    xlim = [0, 5]
+    if args.xlim is not None:
+        xlim = [float(v) for v in args.xlim.split(':')]
+
+    plt.xlim(xlim)
+    
+    if args.ylim is not None:
+        ylim = [float(v) for v in args.ylim.split(':')]
+        plt.ylim(ylim)
+    
     plt.xlabel("Time (ms)")
     plt.ylabel("photons / m$^2$ / s / source photon")
     plt.legend()
@@ -107,7 +126,7 @@ def plotone(fname, obs):
     print("Norm of the MC results:", dt * sum(tl) * (4 * np.pi * R**2))
 
     plt.plot(tshift / co.milli,
-             tl, label="Simulation")
+             tl, label=fname)
 
     fp.close()
  
