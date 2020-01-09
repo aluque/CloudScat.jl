@@ -31,6 +31,10 @@ def get_parser():
                         help="Limits of the x-axis in ms (x0:x1)", 
                         action='store', default=None)
 
+    parser.add_argument("--log",
+                        help="Use logarithmic scale", 
+                        action='store_true', default=False)
+
     parser.add_argument("--ylim", "-y",
                         help="Limits of the z-axis (y0:y1)", 
                         action='store', default=None)
@@ -62,7 +66,10 @@ def main():
     if args.ylim is not None:
         ylim = [float(v) for v in args.ylim.split(':')]
         plt.ylim(ylim)
-    
+
+    if args.log:
+        plt.semilogy()
+        
     plt.xlabel("Time (ms)")
     plt.ylabel("photons / m$^2$ / s / source photon")
     plt.legend()
