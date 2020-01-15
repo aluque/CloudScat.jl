@@ -46,6 +46,8 @@ Structure to contain all simulation parameters.
     "Parameter for Qext - 2 = c * r^(-3/4)"
     c = 0.0
 
+    "Minimum weight: below, particles are subjected to Russian roulette"
+    weight_min = 0.5
     
     "Scatering particle density"
     nscat = 100 * co.centi^-3

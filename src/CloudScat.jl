@@ -52,10 +52,16 @@ function sample(s::Rayleigh, ξ)
 end
     
 # Test absorption of the particle
-absorb(s::Mie) = trand() > s.ω0
-absorb(s::Rayleigh) = false
-absorb(s::Isotropic) = false
-absorb(s::Null) = false
+function reweight(s::Mie, w, wmin)
+    w1 = s.ω0 * w
+    if w1 < wmin
+        w1 = trand() < w1 ? 1.0 : 0.0
+    end
+    w1
+end
+reweight(s::Rayleigh, w, wmin) = w
+reweight(s::Isotropic, w, wmin) = w
+reweight(s::Null, w, wmin) = w
 
 # Whether a particle can scatter
 scatters(s::Null) = false
@@ -96,7 +102,7 @@ mutable struct Population
     r::Vector{SVector{3, Float64}}     # Positions
     μ::Vector{SVector{3, Float64}}     # Directions
     t::Vector{Float64}                 # Time
-    isactive::Vector{Bool}             # Is active?
+    w::Vector{Float64}                 # Weights
 end
 
 
@@ -110,7 +116,7 @@ Population(n::Int64) = Population(n,
                                   Vector{SVector{3, Float64}}(undef, n),
                                   Vector{SVector{3, Float64}}(undef, n),
                                   Array{Float64, 1}(undef, n),
-                                  Array{Bool, 1}(undef, n))
+                                  Array{Float64, 1}(undef, n))
 
 
 """
@@ -204,7 +210,6 @@ function save(fname, p::Population, observers::Vector{Observer},
         # g["r", args...] = p.r
         # g["mu", args...] = p.μ
         # g["t", args...] = p.t
-        # g["isactive", args...] = p.isactive
 
         for (i, obs) in enumerate(observers)
             g = g_create(file, format("obs{:05d}", i))
@@ -240,7 +245,7 @@ function initphotons!(p::Population, params::Params)
         p.r[i] = (1 - ξ) * source_a + ξ * source_b
         p.μ[i] = randsphere()
         p.t[i] = 0.0
-        p.isactive[i] = true
+        p.w[i] = 1.0
     end
 end
 
@@ -299,7 +304,7 @@ function iterate!(p::Population, world::World, observers::Vector{Observer},
     
     Threads.@threads for tid in 1:Threads.nthreads()
         @inbounds for i in getrange(tid, p.n)
-            p.isactive[i] || continue
+            (p.w[i] > 0) || continue
             count[Threads.threadid()] += 1
 
             # Propagate
@@ -310,7 +315,7 @@ function iterate!(p::Population, world::World, observers::Vector{Observer},
         
             # Check if inside the domain
             if !inside(world.domain, p.r[i])
-                p.isactive[i] = false
+                p.w[i] = 0.0
                 continue
             end
 
@@ -320,12 +325,13 @@ function iterate!(p::Population, world::World, observers::Vector{Observer},
             # Accumulate observations
             if p.r[i][3] > params.zmin
                 for o in observers
-                    observeone!(o, world, scat, p.r[i], p.μ[i], p.t[i], params)
+                    observeone!(o, world, scat, p.r[i], p.μ[i], p.t[i], p.w[i],
+                                params)
                 end
             end
             
             # Scatter and check if absorbed
-            p.μ[i], p.isactive[i] = scatterone(p.μ[i], scat, params)
+            p.μ[i], p.w[i] = scatterone(p.μ[i], p.w[i], scat, params)
         end
     end
     sum(count)
@@ -333,7 +339,7 @@ end
 
 
 """
-    observeone!(o, w, scat, r, μ, t, params)
+    observeone!(o, w, scat, r, μ, t, weight, params)
 
 Check one particle and one observer and add the particle's contribution to
 the timeline and image.
@@ -342,7 +348,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
 """
 @inline @fastmath function observeone!(o::Observer, w::World,
                                        s::NonNull,
-                                       r, μ, t, params::Params)
+                                       r, μ, t, weight, params::Params)
     @unpack N, νray_ground, H, radius = params
     # Distance to the observer
     sobs = norm(o.r - r)
@@ -379,7 +385,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     # Update the observation curve
     ind = 1 + Int64(fld(tobs, o.δt))
     if ind <= size(o.obs, 1)
-        @inbounds o.obs[ind, tid] += f / o.δt
+        @inbounds o.obs[ind, tid] += weight * f / o.δt
     end 
 
     # Now update the image at the given pixels
@@ -391,20 +397,21 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
         # δu^2 * (cos θ)^3, where θ is the angle with the vertical.
         # Actually cos θ = μobs[3].  The units would be here
         # photons / sr / source photon.
-        @inbounds o.img[px, py, tid] += f / (o.δu^2 * μobs[3]^3)
+        @inbounds o.img[px, py, tid] += weight * f / (o.δu^2 * μobs[3]^3)
     end
 end
 
-observeone!(o::Observer, w, ::Null, r, μ, t, params::Params) = nothing
+observeone!(o::Observer, w, ::Null, r, μ, t, weight, params::Params) = nothing
 
 function observeall!(p::Population, w::World, scat::ScatteringType,
                      observers::Vector{Observer}, params::Params)
     Threads.@threads for tid in 1:Threads.nthreads()
         @inbounds for i in getrange(tid, p.n)
-            p.isactive[i] || continue
+            (p.w[i] > 0.0) || continue
             if p.r[i][3] > params.zmin
                 for o in observers
-                    observeone!(o, w, scat, p.r[i], p.μ[i], p.t[i], params)
+                    observeone!(o, w, scat, p.r[i], p.μ[i], p.t[i], p.w[i],
+                                params)
                 end
             end
         end
@@ -530,16 +537,17 @@ which is returned.
 
 NB: This function breaks down if μ is directed exactly along z.
 """
-@inline @fastmath function scatterone(μ, scat::ScatteringType, params)
-    scatters(scat) || (return μ, true)
+@inline @fastmath function scatterone(μ, w, scat::ScatteringType, params)
+    @unpack weight_min = params
+    scatters(scat) || (return μ, w)
     
     # Return false if the particle is absorbed
-    absorb(scat) && (return μ, false)
+    w = reweight(scat, w, weight_min)
 
     ϕ = 2π * trand()
     cosθ = sample(scat, trand())
 
-    turn(μ, cosθ, ϕ), true
+    turn(μ, cosθ, ϕ), w
 end
 
 
@@ -610,7 +618,7 @@ function repack!(p::Population)
     k = zeros(Int64, p.n)
     c = 0
     for i in 1:p.n
-        if p.isactive[i]
+        if p.w[i] > 0
             c += 1
             k[c] = i
         end
@@ -620,7 +628,7 @@ function repack!(p::Population)
         p.μ[i] = p.μ[k[i]]
         p.r[i] = p.r[k[i]]
         p.t[i] = p.t[k[i]] 
-        p.isactive[i] = true
+        p.w[i] = p.w[k[i]] 
     end
 
     @debug "\u1b[0KParticles repackaged (took $(1000 * (time() - start)) ms)"
