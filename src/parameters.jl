@@ -94,13 +94,18 @@ end
 function init_params(;kw...)
     λ = kw[:λ]
     radius = kw[:radius]
-    σray = Ray.σ(λ)
 
-    miefit = MieParams.miefit(λ)
-    @info "Mie scattering parameters computed for λ=$(λ*1e9) nm" miefit
+    σray = Ray.σ(λ)
     @info "Rayleigh cross section computed for λ=$(λ*1e9) nm" σray
-    
-    Qext_max = 2. + miefit.c * power34(radius)
+
+    miefit = MieParams.miefit(λ)    
+    @unpack g0, r0, c, a = miefit
+    g = g0 * radius / (radius + r0)
+    Qext = 2. + c * power34(radius)
+    ω0 = 1. - a * radius
+
+    @info "Mie scattering parameters computed for λ=$(λ*1e9) nm" miefit
+    @info "For radius=$(radius*1e6) μm" g ω0 Qext
     
     kwd = Dict(pairs(kw))
     (:g0 in keys(kw)) || (kwd[:g0] = miefit.g0)
@@ -109,7 +114,7 @@ function init_params(;kw...)
     (:c in keys(kw)) || (kwd[:c] = miefit.c)
     
     (:σray in keys(kw)) || (kwd[:σray] = σray)
-    (:νmiemax in keys(kw)) || (kwd[:νmiemax] = Qext_max * π * radius^2 * kwd[:nscat])
+    (:νmiemax in keys(kw)) || (kwd[:νmiemax] = Qext * π * radius^2 * kwd[:nscat])
     
     Params(;kwd...)
 end    

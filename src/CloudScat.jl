@@ -497,10 +497,16 @@ Choose the type of scattering event, depending on the altitude `z`.
 @inline function choosescat(r, world::World, params::Params)::ScatteringType
     @unpack νmax, nair, H, σray, νray_ground, c, g0, r0, a = params
     inside(world.domain, r) || return Null
-    radius = world.rfunc(r)
 
-    Qext = 2. + c * power34(radius)
-    νMie = Qext * π * radius^2 * world.nfunc(r)
+    if inside(world.cloud, r)        
+        radius = world.rfunc(r)
+        Qext = 2. + c * power34(radius)
+        νMie =  Qext * π * radius^2 * world.nfunc(r)
+    else
+        radius = 0.0
+        νMie = 0.0
+    end
+    
     νRay = νray_ground * exp(-r[3] / H)
     
     ξ = trand() * νmax
@@ -525,10 +531,10 @@ which is returned.
 NB: This function breaks down if μ is directed exactly along z.
 """
 @inline @fastmath function scatterone(μ, scat::ScatteringType, params)
-    scatters(scat) || return μ, true
+    scatters(scat) || (return μ, true)
     
     # Return false if the particle is absorbed
-    absorb(scat) && return μ, false
+    absorb(scat) && (return μ, false)
 
     ϕ = 2π * trand()
     cosθ = sample(scat, trand())
@@ -563,7 +569,7 @@ computed fit in params.
     @unpack g0, r0, a, c = params
     (g = g0 * radius / (radius + r0),
      ω0 = 1. - a * radius,
-     Qext = 2. + c * power34(radius))
+     Qext = 2. + c * power34(radius)o)
 end
 
 
