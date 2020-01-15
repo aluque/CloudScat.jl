@@ -15,28 +15,74 @@ using Random
 
 export World, Observer
 
+
 include("parameters.jl")
 include("geometry.jl")
-include("phasefuncs.jl")
+#include("phasefuncs.jl")
 include("constants.jl")
 include("rayleigh.jl")
 
 const co = constants
 const SAMPLES_PATH = normpath(joinpath(@__DIR__, "..", "samples"))
 
-# For the dynamical dispatch we define types of collisions but they
-# currently don't do anything
+# For the dynamical dispatch we define types of collisions
 abstract type ScatteringType end 
-struct Mie <: ScatteringType end
+struct Mie <: ScatteringType
+    g::Float64
+    ω0::Float64
+end
 struct Rayleigh <: ScatteringType end
 struct Null <: ScatteringType end
 struct Isotropic <: ScatteringType end
 
+const NonNull = Union{Mie, Rayleigh, Isotropic}
 
-struct World{Tc,Td,Fn}
+# Phase functions
+p(s::Mie, μ) = (1 / 4π) * (1 - s.g^2) / (1 + s.g^2 - 2 * s.g * μ)^(3/2)
+p(s::Rayleigh, μ) = (3 / 16π) * (1 + μ^2)
+p(s::Isotropic, μ) = (1 / 4π)
+
+# Sampling from the phase functions.  Here ξ is a random number uniformly
+# distributed in [0, 1).
+sample(s::Mie, ξ) = (1 + s.g^2 - ((1 - s.g^2) / (1 + s.g * (2 * ξ - 1)))^2) / (2 * s.g)
+function sample(s::Rayleigh, ξ)
+    z = 2 * (2ξ - 1)
+    w = z + sqrt(z^2 + 1)
+    w^(1//3) - w^(-1//3)
+end
+    
+# Test absorption of the particle
+absorb(s::Mie) = trand() > s.ω0
+absorb(s::Rayleigh) = false
+absorb(s::Isotropic) = false
+absorb(s::Null) = false
+
+# Whether a particle can scatter
+scatters(s::Null) = false
+scatters(s::Union{Rayleigh, Mie, Isotropic}) = true
+
+
+# Fast computation of x^(-3/4)
+power34(x) = @fastmath 1. / sqrt(x) / sqrt(sqrt(x))
+
+"""
+    MieSolution
+
+The parameters obtained for a Mie scattering computation instances of this
+struct should be returned by probemie(r).
+"""
+struct MieSolution
+    g::Float64
+    ω0::Float64
+    Qext::Float64
+end
+
+
+struct World{Tc,Td,Fn,Fr}
     cloud::Tc
     domain::Td
     nfunc::Fn
+    rfunc::Fr
 end
 
 
@@ -110,6 +156,7 @@ end
 
 function main(params::Params, world::World, observers::Vector{Observer};
               saveto::Union{String,Nothing}=nothing)
+
     function fmt(level, _module, group, id, file, line)
         return (:blue, format("{:<23}:", Dates.now()), "")
     end
@@ -210,7 +257,7 @@ function run!(p::Population, world::World, observers::Vector{Observer},
 
     set_zero_subnormals(true)
     
-    observeall!(p, world, Isotropic, observers, params)
+    observeall!(p, world, Isotropic(), observers, params)
 
     prog = Progress(N, 5)
     
@@ -286,16 +333,17 @@ end
 
 
 """
-    observeone!(o, p, r, μ, t, params)
+    observeone!(o, w, scat, r, μ, t, params)
 
 Check one particle and one observer and add the particle's contribution to
 the timeline and image.
 
 NOTE: Absorption is not considered here: it would simply add a factor ω₀
 """
-@inline @fastmath function observeone!(o::Observer, w::World, p::Function,
+@inline @fastmath function observeone!(o::Observer, w::World,
+                                       s::NonNull,
                                        r, μ, t, params::Params)
-    @unpack g, N, Qext, νray_ground, H, radius = params
+    @unpack N, νray_ground, H, radius = params
     # Distance to the observer
     sobs = norm(o.r - r)
     
@@ -305,8 +353,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     μscat = μ ⋅ μobs
 
     # Optical depth to the observer
-    ν(r::Point) = (inside(w.cloud, r) ? (Qext * π * radius^2 * w.nfunc(r))
-                   : zero(Float64))
+    ν(r::Point) = miecollrate(r, w, params)
 
     τmie = optpath(w.cloud, ν, r, o.r)
 
@@ -322,7 +369,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     # - the surface at the observer subtended by this solid angle is s^2 dΩ.
     # So the number of photons per unit surface at the observer is
     # N p(μ) / s^2.  To this we have to add an attenuation factor exp(-s / Λ).
-    f = p(g, μscat) * exp(-τ) / (sobs^2 * N)
+    f = p(s, μscat) * exp(-τ) / (sobs^2 * N)
     
     # Now find time of observation if the particle manages to escape
     tobs = t + sobs / co.c
@@ -348,17 +395,9 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     end
 end
 
-observeone!(o::Observer, w, ::Type{Mie}, r, μ, t, params::Params) =
-    observeone!(o, w, phg, r, μ, t, params)
-observeone!(o::Observer, w, ::Type{Rayleigh}, r, μ, t, params::Params) =
-    observeone!(o, w, pr, r, μ, t, params)
-observeone!(o::Observer, w, ::Type{Isotropic}, r, μ, t, params::Params) =
-    observeone!(o, w, piso, r, μ, t, params)
-function observeone!(o::Observer, w, ::Type{Null}, r, μ, t, params::Params)
-end
+observeone!(o::Observer, w, ::Null, r, μ, t, params::Params) = nothing
 
-
-function observeall!(p::Population, w::World, scat::Type{<:ScatteringType},
+function observeall!(p::Population, w::World, scat::ScatteringType,
                      observers::Vector{Observer}, params::Params)
     Threads.@threads for tid in 1:Threads.nthreads()
         @inbounds for i in getrange(tid, p.n)
@@ -455,23 +494,25 @@ end
 
 Choose the type of scattering event, depending on the altitude `z`. 
 """
-@inline function choosescat(r, world::World, params::Params)
-    @unpack νmax, Qext, nair, H, σray, νray_ground, radius = params
+@inline function choosescat(r, world::World, params::Params)::ScatteringType
+    @unpack νmax, nair, H, σray, νray_ground, c, g0, r0, a = params
     inside(world.domain, r) || return Null
+    radius = world.rfunc(r)
 
-    νMie = (inside(world.cloud, r) ?
-            Qext * π * radius^2 * world.nfunc(r) :
-            Float64(0))
+    Qext = 2. + c * power34(radius)
+    νMie = Qext * π * radius^2 * world.nfunc(r)
     νRay = νray_ground * exp(-r[3] / H)
     
     ξ = trand() * νmax
 
     if ξ <= νMie
-        return Mie
+        g = g0 * radius / (radius + r0)
+        ω0 = 1. - a * radius
+        return Mie(g, ω0)
     elseif ξ <= (νMie + νRay)
-        return Rayleigh
+        return Rayleigh()
     else
-        return Null
+        return Null()
     end
 end
 
@@ -483,35 +524,47 @@ which is returned.
 
 NB: This function breaks down if μ is directed exactly along z.
 """
-@inline @fastmath function scatterone(μ, ::Type{Mie}, params)
-    @unpack ω₀, g = params
-
+@inline @fastmath function scatterone(μ, scat::ScatteringType, params)
+    scatters(scat) || return μ, true
+    
     # Return false if the particle is absorbed
-    trand() < ω₀ || return μ, false
+    absorb(scat) && return μ, false
 
     ϕ = 2π * trand()
-    cosθ = μhg(g, trand())
+    cosθ = sample(scat, trand())
 
     turn(μ, cosθ, ϕ), true
 end
 
 
-""" 
-Given a unitary vector μ, sample a scattering angle from the Rayleigh
-distribution and finds a new vector that forms that angle with μ,
-which is returned.
-
-NB: This function breaks down if μ is directed exactly along z.
 """
-@inline @fastmath function scatterone(μ, ::Type{Rayleigh}, params)
-    ϕ = 2π * trand()
-    cosθ = μr(trand())
+    miecollrate(r, w, params)
 
-    turn(μ, cosθ, ϕ), true
+Computes Mie collision rate at a given point.
+"""
+function miecollrate(r::Point, w::World, params::Params)
+    inside(w.cloud, r) || return zero(Float64)
+    @unpack c = params
+    radius = w.rfunc(r)
+
+    # Is the computation of ω0, g optimized out?
+    Qext = 2. + c * power34(radius)
+    Qext * π * radius^2 * w.nfunc(r)
 end
 
 
-scatterone(μ, ::Type{Null}, params) = (μ, true)
+"""
+    s = evalmie(scat, r, params)
+
+Obtain a solution of the Mie scattering problem by using the previously
+computed fit in params.
+"""
+@inline @fastmath function evalmie(radius, params)
+    @unpack g0, r0, a, c = params
+    (g = g0 * radius / (radius + r0),
+     ω0 = 1. - a * radius,
+     Qext = 2. + c * power34(radius))
+end
 
 
 """ 

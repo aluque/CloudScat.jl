@@ -29,19 +29,24 @@ Structure to contain all simulation parameters.
     "Wavelength"
     λ = 337 * co.nano
     
-    "Extinction efficiency"
-    Qext = 2.0
-    
-    "Asymmetry parameter" #(see e.g. Jursa Handbook of Geophysics and the
-    # Space Environment, chap. 18 or Koshak 1994)
-    g = 0.84
-
-    "Single scattering albedo"
-    ω₀ = 0.99996
-
-    "Radius of the scattering particles"
+    "Radius of the scattering particles (for inhom clouds, an upper bound)"
     radius = 10e-6
 
+    # To allow for a variable particle radius we fit the mie scattering
+    # parameters g, ω0 and Qext.  These are the fitting parameters
+    "Limit asymmetry parameter for r -> inf"
+    g0 = 0.84
+
+    "Fit parameter for g = g0 * r / (r + r0)"
+    r0 = 0.0
+
+    "Slope of the dependence 1 - ω0 = a * r"
+    a = 0.0
+
+    "Parameter for Qext - 2 = c * r^(-3/4)"
+    c = 0.0
+
+    
     "Scatering particle density"
     nscat = 100 * co.centi^-3
 
@@ -72,16 +77,13 @@ Structure to contain all simulation parameters.
     "Max. Rayleigh collision rate"
     νraymax = νray_ground * exp(-zmin / H)
         
-    "Max. Mie collision rate"
-    νmiemax = Qext * π * radius^2 * nscat
+    "Max. Mie collision rate."
+    νmiemax = 0.0
 
     "Max. total collision rate"
     νmax = νmiemax + νraymax
 
     @assert λ > 0
-    @assert Qext > 0
-    @assert g > 0
-    @assert ω₀ > 0
     @assert radius > 0
     @assert nscat > 0
     @assert H > 0
@@ -92,17 +94,23 @@ end
 function init_params(;kw...)
     λ = kw[:λ]
     radius = kw[:radius]
-    g, ω₀, Qext = MieParams.compute(radius, λ)
     σray = Ray.σ(λ)
+
+    miefit = MieParams.miefit(λ)
+    @info "Mie scattering parameters computed for λ=$(λ*1e9) nm" miefit
+    @info "Rayleigh cross section computed for λ=$(λ*1e9) nm" σray
     
-    @info "Scattering parameters computed for radius=$(radius*1e6) μm, λ=$(λ*1e9) nm" g ω₀ Qext σray
-
+    Qext_max = 2. + miefit.c * power34(radius)
+    
     kwd = Dict(pairs(kw))
-    (:g in keys(kw)) || (kwd[:g] = g)
-    (:ω₀ in keys(kw)) || (kwd[:ω₀] = ω₀)
-    (:Qext in keys(kw)) || (kwd[:Qext] = Qext)
+    (:g0 in keys(kw)) || (kwd[:g0] = miefit.g0)
+    (:r0 in keys(kw)) || (kwd[:r0] = miefit.r0)
+    (:a in keys(kw)) || (kwd[:a] = miefit.a)
+    (:c in keys(kw)) || (kwd[:c] = miefit.c)
+    
     (:σray in keys(kw)) || (kwd[:σray] = σray)
-
+    (:νmiemax in keys(kw)) || (kwd[:νmiemax] = Qext_max * π * radius^2 * kwd[:nscat])
+    
     Params(;kwd...)
 end    
 

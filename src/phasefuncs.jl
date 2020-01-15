@@ -12,7 +12,9 @@ pr(μ) = (3 / 16π) * (1 + μ^2)
 pr(g, μ) = pr(μ)
 
 # Isotropic scattering
-piso(g, μ) = (1 / 4π)
+piso(μ) = (1 / 4π)
+piso(g, μ) = piso(μ)
+
 
 # Sample from the Rayleigh phase function.  The PDF notes are wrong.
 function μr(ξ)

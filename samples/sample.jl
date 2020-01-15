@@ -60,9 +60,10 @@ function run()
     # A function to set inhomogeneous densities of scattering particles
     # Here we just use a homogeneous one.
     nfunc(r::Point) = params.nscat
+    rfunc(r::Point) = params.radius
     
     # Define the full simulation world
-    world = World(cloud, domain, nfunc)
+    world = World(cloud, domain, nfunc, rfunc)
 
     # Observers record a time curve and an image of received light.  You can
     # set up as many observers as you wish but they have a significant impact
