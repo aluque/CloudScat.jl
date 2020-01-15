@@ -47,7 +47,7 @@ Structure to contain all simulation parameters.
     c = 0.0
 
     "Minimum weight: below, particles are subjected to Russian roulette"
-    weight_min = 0.5
+    weight_min = 0.01
     
     "Scatering particle density"
     nscat = 100 * co.centi^-3
