@@ -278,7 +278,7 @@ function run!(p::Population, world::World, observers::Vector{Observer},
             break
         end
         if it % 100 == 0
-            update!(prog, N - actives,
+            update!(prog, N - Int(floor(sum(@view p.w[1:p.n]))),
                     showvalues=[(:iterations, it),
                                 (:particles, actives),
                                 (:fill_ratio, fill_ratio)])
