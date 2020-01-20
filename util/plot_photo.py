@@ -35,10 +35,18 @@ def get_parser():
                         help="Use logarithmic scale", 
                         action='store_true', default=False)
 
+    parser.add_argument("--grid",
+                        help="Use a grid", 
+                        action='store_true', default=False)
+    
     parser.add_argument("--ylim", "-y",
                         help="Limits of the z-axis (y0:y1)", 
                         action='store', default=None)
 
+    parser.add_argument("--minor", 
+                        help="Minor tick interval in ms", 
+                        action='store', default=None, type=float)
+    
     parser.add_argument("--output", "-o",
                         action="store",
                         help="Output file",
@@ -62,13 +70,21 @@ def main():
         xlim = [float(v) for v in args.xlim.split(':')]
 
     plt.xlim(xlim)
-    
+    if args.minor is not None:
+        minor_ticks = np.arange(xlim[0], xlim[1], args.minor)
+        plt.gca().set_xticks(minor_ticks, minor=True)
+        plt.gca().grid(which='minor', alpha=0.35)
+        
+        
     if args.ylim is not None:
         ylim = [float(v) for v in args.ylim.split(':')]
         plt.ylim(ylim)
 
     if args.log:
         plt.semilogy()
+
+    if args.grid:
+        plt.grid()
         
     plt.xlabel("Time (ms)")
     plt.ylabel("photons / m$^2$ / s / source photon")
