@@ -100,6 +100,8 @@ function init_params(;kw...)
     logger = ConsoleLogger(meta_formatter=fmt)
 
     with_logger(logger) do
+        @info "CloudScat (c) Alejandro Luque IAA-CSIC, 2020"
+        @info "Mie solver by Olli Wilkman (https://github.com/dronir/MieScatter.jl)"
         λ = kw[:λ]
         radius = kw[:radius]
         
