@@ -11,7 +11,6 @@ The code is distributed as a [julia](https://julialang.org) package.  To install
 
 ```julia
 # Use Mie scattering code by Olli Wilkman
-add https://github.com/dronir/MieScatter.jl.git
 add http://gitlab.com/aluque/cloudscat
 ```
 You can exit the package manager by pressing backspace at the beginning of the prompt.
@@ -52,11 +51,11 @@ To see the image recorded by the same observer use
 
 ### Complex geometries
 
-CloudScat can manage very complex cloud geometries, defined as combination and
+CloudScat can manage very complex cloud geometries, defined as combinations and
 linear transformations of a set of elementary shapes. Full details are given
 in the example file `cloud_geometry.jl`. If you want to define new geometrical
 shapes beyond those provided by default, look at `src/geometry.jl`. A geometry 
-type must define method to compute (quickly if possible) intersections between 
+type must define methods to compute (quickly if possible) intersections between 
 the defined shape and a straight line and to test whether a point is inside the 
 figure.
 
