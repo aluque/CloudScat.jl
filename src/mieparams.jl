@@ -10,9 +10,11 @@ module MieParams
 using Parameters
 using FastGaussQuadrature
 using Interpolations
-using MieScatter
 using DelimitedFiles
 using Formatting
+
+include("MieScatter/src/MieScatter.jl")
+using .MieScatter
 
 include("constants.jl")
 const co = constants
