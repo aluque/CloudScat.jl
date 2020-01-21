@@ -1,11 +1,9 @@
 module CloudScat
 using StaticArrays
-using QuadGK
 using LinearAlgebra
 using Interpolations
 using Dates
 using HDF5
-using YAML
 using Parameters
 using Formatting
 using Logging

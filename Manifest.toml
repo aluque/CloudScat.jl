@@ -45,12 +45,6 @@ git-tree-sha1 = "16d4acb3d37dc05b714977ffefa8890843dc8985"
 uuid = "d5fb7624-851a-54ee-a528-d3f3bac0b4a0"
 version = "0.2.3"
 
-[[Codecs]]
-deps = ["Test"]
-git-tree-sha1 = "70885e5e038cba1c4c17a84ad6c40756e10a4fb5"
-uuid = "19ecbf4d-ef7c-5e4b-b54a-0a0ff23c5aed"
-version = "0.5.0"
-
 [[Compat]]
 deps = ["Base64", "Dates", "DelimitedFiles", "Distributed", "InteractiveUtils", "LibGit2", "Libdl", "LinearAlgebra", "Markdown", "Mmap", "Pkg", "Printf", "REPL", "Random", "Serialization", "SharedArrays", "Sockets", "SparseArrays", "Statistics", "Test", "UUIDs", "Unicode"]
 git-tree-sha1 = "ed2c4abadf84c53d9e58510b5fc48912c2336fbb"
@@ -62,12 +56,6 @@ deps = ["Compat", "Rotations", "StaticArrays"]
 git-tree-sha1 = "47f05d0b7f4999609f92e657147df000818c1f24"
 uuid = "150eb455-5306-5404-9cee-2592286d6298"
 version = "0.5.0"
-
-[[DataStructures]]
-deps = ["InteractiveUtils", "OrderedCollections"]
-git-tree-sha1 = "b7720de347734f4716d1815b00ce5664ed6bbfd4"
-uuid = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
-version = "0.17.9"
 
 [[Dates]]
 deps = ["Printf"]
@@ -214,12 +202,6 @@ git-tree-sha1 = "48058bc11607676e5bbc0b974af79106c6200787"
 uuid = "92933f4c-e287-5a05-a399-4b506db050ca"
 version = "0.9.0"
 
-[[QuadGK]]
-deps = ["DataStructures", "LinearAlgebra"]
-git-tree-sha1 = "1af46bf083b9630a5b27d4fd94f496c5fca642a8"
-uuid = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
-version = "2.1.1"
-
 [[REPL]]
 deps = ["InteractiveUtils", "Markdown", "Sockets"]
 uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
@@ -301,9 +283,3 @@ deps = ["LinearAlgebra", "SparseArrays"]
 git-tree-sha1 = "bbb9f7fd6fbdd9582e77c0b698312c543de5eb71"
 uuid = "efce3f68-66dc-5838-9240-27a6d6f5f9b6"
 version = "0.5.0"
-
-[[YAML]]
-deps = ["Codecs", "Compat"]
-git-tree-sha1 = "3bde77cee95cce0c0b9b18813d85e18e8ed4f415"
-uuid = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
-version = "0.3.2"
