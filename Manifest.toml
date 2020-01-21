@@ -168,13 +168,6 @@ uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 deps = ["Base64"]
 uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
 
-[[MieScatter]]
-git-tree-sha1 = "0deb2441be982a96c4dbc360e81a0287358961a8"
-repo-rev = "master"
-repo-url = "https://github.com/dronir/MieScatter.jl.git"
-uuid = "7038dbdc-10f3-4089-aa24-6a8ce12b2704"
-version = "0.2.0"
-
 [[Mmap]]
 uuid = "a63ad114-7e13-5084-954f-fe012c677804"
 
