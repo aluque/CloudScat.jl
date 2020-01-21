@@ -92,32 +92,6 @@ struct World{Tc,Td,Fn,Fr}
 end
 
 
-"""
-    Population
-
-Description of the photon population.
-"""
-mutable struct Population
-    n::Int64                           # Size of the population
-    r::Vector{SVector{3, Float64}}     # Positions
-    μ::Vector{SVector{3, Float64}}     # Directions
-    t::Vector{Float64}                 # Time
-    w::Vector{Float64}                 # Weights
-end
-
-
-"""
-    Population(n)
-
-Create an uninitialized population structure with space to hold up to `n`
-photons.
-"""
-Population(n::Int64) = Population(n,
-                                  Vector{SVector{3, Float64}}(undef, n),
-                                  Vector{SVector{3, Float64}}(undef, n),
-                                  Array{Float64, 1}(undef, n),
-                                  Array{Float64, 1}(undef, n))
-
 
 """
     Observer
@@ -174,15 +148,11 @@ function main(params::Params, world::World, observers::Vector{Observer};
         
         @info "Running with $(Threads.nthreads()) thread(s) (JULIA_NUM_THREADS)"
         
-        @info "Initializing the photon population"
-        p = Population(params.N)
-        initphotons!(p, params)
-
         # Run the MC simulation
         @info "Running the MC simulation"
-        run!(p, world, observers, params)
+        run!(world, observers, params)
         
-        !isnothing(saveto) && save(saveto, p, observers, params)
+        !isnothing(saveto) && save(saveto, observers, params)
         p, observers
     end
 end
@@ -193,8 +163,7 @@ end
 
 Save the population and observations into a h5 file called `fname`.
 """
-function save(fname, p::Population, observers::Vector{Observer},
-              params::Params)
+function save(fname, observers::Vector{Observer}, params::Params)
     
     h5open(fname, "w") do file
         g = g_create(file, "parameters")
@@ -233,20 +202,20 @@ end
 
 
 """ 
-    initphotons!(p, params)
+    newphoton(params)
 
-Initialize all photons in a population `p` according to the parameters `params`.
+Initialize a a new photon..
 """
-function initphotons!(p::Population, params::Params)
+function newphoton(params::Params)
     @unpack source_a, source_b = params
 
-    for i in 1:p.n
-        ξ = trand()
-        p.r[i] = (1 - ξ) * source_a + ξ * source_b
-        p.μ[i] = randsphere()
-        p.t[i] = 0.0
-        p.w[i] = 1.0
-    end
+    ξ = trand()
+    r = (1 - ξ) * source_a + ξ * source_b
+    μ = randsphere()
+    t = 0.0
+    w = 1.0
+
+    r, μ, t, w
 end
 
 
@@ -255,39 +224,33 @@ end
 
 Run the MC simulation on a photon population and a collection of observers.
 """
-function run!(p::Population, world::World, observers::Vector{Observer},
-              params::Params)    
-    @unpack max_iter, N = params
-    @unpack min_fill_ratio, min_actives_for_repack = params
+function run!(world::World, observers::Vector{Observer}, params::Params)    
+    @unpack N = params
 
     set_zero_subnormals(true)
     
-    observeall!(p, world, Isotropic(), observers, params)
-
     prog = Progress(N, 5)
+    prog_lock = Threads.SpinLock()
+
+    count = Threads.Atomic{Int}(0)
     
-    for it in 1:max_iter
-        actives = iterate!(p, world, observers, params)
-        fill_ratio = actives / p.n
-        if fill_ratio < min_fill_ratio && actives > min_actives_for_repack
-            repack!(p)
-        end
+    Threads.@threads for tid in 1:Threads.nthreads()
+        @inbounds for i in getrange(tid, N)
+            r, μ, t, w = newphoton(params)
             
-        if actives == 0
-            ProgressMeter.finish!(prog)
-            break
-        end
-        if it % 100 == 0
-            update!(prog, N - Int(ceil(sum(@view p.w[1:p.n]))),
-                    showvalues=[(:iterations, it),
-                                (:particles, actives),
-                                (:fill_ratio, fill_ratio)])
+            for o in observers
+                observeone!(o, world, Isotropic(), r, μ, t, w, params)
+            end
+
+            iterate(r, μ, t, w, world, observers, params)            
+
+            lock(prog_lock)
+            ProgressMeter.next!(prog)
+            unlock(prog_lock)
         end
     end
 end
 
-
-const count = Int64[]
 
 """
     iterate!(p, observers, params)
@@ -295,46 +258,38 @@ const count = Int64[]
 Iterate over all particles in the population `p` and advance them, including
 their eventual observation by `observers`.
 """
-function iterate!(p::Population, world::World, observers::Vector{Observer},
+function iterate(r, μ, t, w, world::World, observers::Vector{Observer},
                   params::Params)
-    # Active particles
-    # c::Int64 = 0
+    @unpack max_iter = params
     
-    count .= 0
-    
-    Threads.@threads for tid in 1:Threads.nthreads()
-        @inbounds for i in getrange(tid, p.n)
-            (p.w[i] > 0) || continue
-            count[Threads.threadid()] += 1
-
-            # Propagate
-            l = travel_null(p.r[i], p.μ[i], world, params)
+    for it in 1:max_iter    
+        (w > 0) || break
         
-            p.r[i] = p.r[i] + p.μ[i] * l
-            p.t[i] += l / co.c
+        # Propagate
+        l = travel_null(r, μ, world, params)
         
-            # Check if inside the domain
-            if !inside(world.domain, p.r[i])
-                p.w[i] = 0.0
-                continue
-            end
-
-            # Choose scattering type
-            scat = choosescat(p.r[i], world, params)
+        r = r + μ * l
+        t += l / co.c
         
-            # Accumulate observations
-            if p.r[i][3] > params.zmin
-                for o in observers
-                    observeone!(o, world, scat, p.r[i], p.μ[i], p.t[i], p.w[i],
-                                params)
-                end
-            end
-            
-            # Scatter and check if absorbed
-            p.μ[i], p.w[i] = scatterone(p.μ[i], p.w[i], scat, params)
+        # Check if inside the domain
+        if !inside(world.domain, r)
+            w = 0.0
+            break
         end
+        
+        # Choose scattering type
+        scat = choosescat(r, world, params)
+        
+        # Accumulate observations
+        if r[3] > params.zmin
+            for o in observers
+                observeone!(o, world, scat, r, μ, t, w, params)
+            end
+        end
+        
+        # Scatter and check if absorbed
+        μ, w = scatterone(μ, w, scat, params)
     end
-    sum(count)
 end
 
 
@@ -402,21 +357,6 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
 end
 
 observeone!(o::Observer, w, ::Null, r, μ, t, weight, params::Params) = nothing
-
-function observeall!(p::Population, w::World, scat::ScatteringType,
-                     observers::Vector{Observer}, params::Params)
-    Threads.@threads for tid in 1:Threads.nthreads()
-        @inbounds for i in getrange(tid, p.n)
-            (p.w[i] > 0.0) || continue
-            if p.r[i][3] > params.zmin
-                for o in observers
-                    observeone!(o, w, scat, p.r[i], p.μ[i], p.t[i], p.w[i],
-                                params)
-                end
-            end
-        end
-    end
-end
 
 
 """ Compute a range appropriate for this thread. 
@@ -604,38 +544,6 @@ Find a unitary vector deviated with inclination θ and azimuth
 end
 
 
-"""
-    pack!(p)
-
-Reorders the particles in the population `p` to have all active particle 
-at the initial positions in the list.
-
-"""
-function repack!(p::Population)
-    start = time()
-    
-    # new positions
-    k = zeros(Int64, p.n)
-    c = 0
-    for i in 1:p.n
-        if p.w[i] > 0
-            c += 1
-            k[c] = i
-        end
-    end
-
-    for i in 1:c
-        p.μ[i] = p.μ[k[i]]
-        p.r[i] = p.r[k[i]]
-        p.t[i] = p.t[k[i]] 
-        p.w[i] = p.w[k[i]] 
-    end
-
-    @debug "\u1b[0KParticles repackaged (took $(1000 * (time() - start)) ms)"
-    p.n = c
-end
-
-
 const INTERFACE_LISTS = Vector{Float64}[]
 
 @noinline function init_interface_list()
@@ -736,7 +644,6 @@ function __init__()
     nth = Threads.nthreads()
     resize!(RNG, nth)
     resize!(INTERFACE_LISTS, nth)
-    resize!(count, nth)
     
     # for tid in 1:nth
     #     RNG[tid] = MersenneTwister(tid)
