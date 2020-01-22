@@ -10,7 +10,6 @@
 The code is distributed as a [julia](https://julialang.org) package.  To install it, after you have downloaded and installed julia, start julia and go into the package manager by pressing `]`.  Then type
 
 ```julia
-# Use Mie scattering code by Olli Wilkman
 add http://gitlab.com/aluque/cloudscat
 ```
 You can exit the package manager by pressing backspace at the beginning of the prompt.
@@ -67,5 +66,3 @@ julia as e.g.
 ```bash
 > JULIA_NUM_THREADS=4 julia --color=yes sample.jl
 ```
-My experience shows that for more than about 4 threads the computation becomes
-limited by memory access so you would not gain much with a larger `JULIA_NUM_THREADS`.  However, you can check is this holds true also in your machine.
