@@ -39,18 +39,9 @@ Structure to contain all simulation parameters.
     "Cross-section for Rayleigh scattering"
     σray = Ray.σ(λ)
     
-    "Domain limit: photons above this height are discarded"
-    domain_top = 50 * co.kilo
-
     "Maximum number of collisions per photon"
     max_iter::Int64 = Int(1e9)
 
-    "Minimum fill ratio of the population arrays"
-    min_fill_ratio = 0.95
-
-    "Maximum number of active particles for repacking"
-    min_actives_for_repack::Int64 = 100
-    
     "Air density at ground level (z = 0)"
     nair = co.nair
 
