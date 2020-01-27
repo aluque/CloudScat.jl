@@ -443,7 +443,7 @@ Choose the type of scattering event, depending on the altitude `z`.
     inside(world.domain, r) || return Null
 
     if inside(world.cloud, r)
-        loc = localcomp(world.comp, r)
+        loc = probe(world.comp, r)
         Qext = mie_qext(world.comp, r, loc)
         νMie =  Qext * π * radius(world.comp, r, loc)^2 * density(world.comp, r, loc)
     else
@@ -495,7 +495,7 @@ Computes Mie collision rate at a given point.
 function miecollrate(r::Point, w::World, params::Params)
     inside(w.cloud, r) || return zero(Float64)
     @unpack c = params
-    loc = localcomp(w.comp, r)
+    loc = probe(w.comp, r)
 
     # Is the computation of ω0, g optimized out?
     Qext = mie_qext(w.comp, r, loc)
