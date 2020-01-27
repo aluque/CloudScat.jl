@@ -1,8 +1,6 @@
 export Params, init_params
 using REPL
 
-include("mieparams.jl")
-
 
 """
     Params
@@ -107,27 +105,11 @@ function init_params(;kw...)
         
         σray = Ray.σ(λ)
         @info "Rayleigh cross section computed for λ=$(λ*1e9) nm" σray
-        
-        miefit = MieParams.miefit(λ)    
-        @unpack g0, r0, c, a = miefit
-        g = g0 * radius / (radius + r0)
-        Qext = 2. + c * power34(radius)
-        ω0 = 1. - a * radius
-        
-        @info "Mie scattering parameters computed for λ=$(λ*1e9) nm" miefit
-        @info "For radius=$(radius*1e6) μm (interpolated)" g ω0 Qext
-        g, ω0, Qext = MieParams.compute(radius, λ)
-        @info "For radius=$(radius*1e6) μm (computed)"  g ω0 Qext
-        
+                
         kwd = Dict(pairs(kw))
-        (:g0 in keys(kw)) || (kwd[:g0] = miefit.g0)
-        (:r0 in keys(kw)) || (kwd[:r0] = miefit.r0)
-        (:a in keys(kw)) || (kwd[:a] = miefit.a)
-        (:c in keys(kw)) || (kwd[:c] = miefit.c)
-        
         (:σray in keys(kw)) || (kwd[:σray] = σray)
         (:νmiemax in keys(kw)) || (kwd[:νmiemax] =
-                                   Qext * π * radius^2 * kwd[:nscat])
+                                   2.5 * π * radius^2 * kwd[:nscat])
         
         Params(;kwd...)
     end

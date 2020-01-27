@@ -2,10 +2,9 @@
 
 using LinearAlgebra, CoordinateTransformations
 
-export Point, Shape, Cylinder, Sphere, Cone, Plane, Empty, shapediff, inside,
+export Shape, Cylinder, Sphere, Cone, Plane, Empty, shapediff, inside,
     TransformedShape
 
-const Point = SVector{3, Float64}
 
 abstract type Shape; end
 

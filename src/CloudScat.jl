@@ -11,13 +11,16 @@ using Dates
 using ProgressMeter
 using Random
 
-export World, Observer
+export Point, World, Observer, fixednr, Fixed, VariableNR
 
+const Point = SVector{3, Float64}
 
+include("constants.jl")
 include("parameters.jl")
+include("mieparams.jl")
+include("composition.jl")
 include("geometry.jl")
 #include("phasefuncs.jl")
-include("constants.jl")
 include("rayleigh.jl")
 
 const co = constants
@@ -66,9 +69,6 @@ scatters(s::Null) = false
 scatters(s::Union{Rayleigh, Mie, Isotropic}) = true
 
 
-# Fast computation of x^(-3/4)
-power34(x) = @fastmath 1. / sqrt(x) / sqrt(sqrt(x))
-
 """
     MieSolution
 
@@ -82,11 +82,10 @@ struct MieSolution
 end
 
 
-struct World{Tc,Td,Fn,Fr}
+struct World{Tc,Td,Tcomp}
     cloud::Tc
     domain::Td
-    nfunc::Fn
-    rfunc::Fr
+    comp::Tcomp
 end
 
 
@@ -443,12 +442,11 @@ Choose the type of scattering event, depending on the altitude `z`.
     @unpack νmax, nair, H, σray, νray_ground, c, g0, r0, a = params
     inside(world.domain, r) || return Null
 
-    if inside(world.cloud, r)        
-        radius = world.rfunc(r)
-        Qext = 2. + c * power34(radius)
-        νMie =  Qext * π * radius^2 * world.nfunc(r)
+    if inside(world.cloud, r)
+        loc = localcomp(world.comp, r)
+        Qext = mie_qext(world.comp, r, loc)
+        νMie =  Qext * π * radius(world.comp, r, loc)^2 * density(world.comp, r, loc)
     else
-        radius = 0.0
         νMie = 0.0
     end
     
@@ -457,8 +455,8 @@ Choose the type of scattering event, depending on the altitude `z`.
     ξ = trand() * νmax
 
     if ξ <= νMie
-        g = g0 * radius / (radius + r0)
-        ω0 = 1. - a * radius
+        g = mie_g(world.comp, r, loc)
+        ω0 = mie_ω0(world.comp, r, loc)
         return Mie(g, ω0)
     elseif ξ <= (νMie + νRay)
         return Rayleigh()
@@ -497,11 +495,11 @@ Computes Mie collision rate at a given point.
 function miecollrate(r::Point, w::World, params::Params)
     inside(w.cloud, r) || return zero(Float64)
     @unpack c = params
-    radius = w.rfunc(r)
+    loc = localcomp(w.comp, r)
 
     # Is the computation of ω0, g optimized out?
-    Qext = 2. + c * power34(radius)
-    Qext * π * radius^2 * w.nfunc(r)
+    Qext = mie_qext(w.comp, r, loc)
+    Qext * π * radius(w.comp, r, loc)^2 * density(w.comp, r, loc)
 end
 
 
@@ -515,7 +513,7 @@ computed fit in params.
     @unpack g0, r0, a, c = params
     (g = g0 * radius / (radius + r0),
      ω0 = 1. - a * radius,
-     Qext = 2. + c * power34(radius)o)
+     Qext = 2. + c * power34(radius))
 end
 
 

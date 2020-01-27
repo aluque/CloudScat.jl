@@ -56,6 +56,28 @@ end
 # A invalid value for default initialization
 MieFit() = MieFit(NaN, NaN, NaN, NaN)
 
+"""
+    m = MieFit(λ)
+
+Compute the fit parameters to compute g, ω0 and Qext for an arbitrary radius
+in the range 1 μm < r < 100 μm.
+"""
+function MieFit(λ)
+    r = 1 * co.micro:1 * co.micro:100 * co.micro    
+    g, ω0, Qext = compute(r, λ; order=10000)
+
+    # Linear regression always more robust so we fit r/g ~ r/m + r0 / m
+    β = linreg(r, r ./ g)
+    g0, r0 = 1 / β[2], β[1] / β[2]
+
+    a = linreg1(r, 1 .- ω0)[1]
+    c = linreg1(power34.(r), Qext .- 2)[1]
+    MieFit(g0, r0, a, c)
+end
+
+mie_g(m::MieFit, radius) = m.g0 * radius / (radius + m.r0)
+mie_qext(m::MieFit, radius) = 2. + m.c * power34(radius)
+mie_ω0(m::MieFit, radius) = 1. - m.a * radius
 
 """
     g, ω₀, Qext = compute(r, λ, m; order=1000)
@@ -106,23 +128,5 @@ function interp_m(λ)
     complex(a, b)
 end
 
-"""
-    m = miefit(λ)
-
-Compute the fit parameters to compute g, ω0 and Qext for an arbitrary radius
-in the range 1 μm < r < 100 μm.
-"""
-function miefit(λ)
-    r = 1 * co.micro:1 * co.micro:100 * co.micro    
-    g, ω0, Qext = compute(r, λ; order=10000)
-
-    # Linear regression always more robust so we fit r/g ~ r/m + r0 / m
-    β = linreg(r, r ./ g)
-    g0, r0 = 1 / β[2], β[1] / β[2]
-
-    a = linreg1(r, 1 .- ω0)[1]
-    c = linreg1(power34.(r), Qext .- 2)[1]
-    MieFit(g0, r0, a, c)
-end
 
 end

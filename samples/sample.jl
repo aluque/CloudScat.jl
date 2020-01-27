@@ -57,13 +57,11 @@ function run()
     # immediately discarded.
     domain = Cylinder(7 * co.kilo, 60 * co.kilo, 0, 0, 200 * co.kilo)
     
-    # A function to set inhomogeneous densities of scattering particles
-    # Here we just use a homogeneous one.
-    nfunc(r::Point) = params.nscat
-    rfunc(r::Point) = params.radius
+    # Set a homogeneous cloud droplet density and radius
+    composition = fixednr(params.λ, params.nscat, params.radius)
     
     # Define the full simulation world
-    world = World(cloud, domain, nfunc, rfunc)
+    world = World(cloud, domain, composition)
 
     # Observers record a time curve and an image of received light.  You can
     # set up as many observers as you wish but they have a significant impact
