@@ -36,6 +36,11 @@ struct Fixed <: CloudComposition
     g::Float64
     ω0::Float64
     Qext::Float64
+    νmiemax::Float64
+
+    function Fixed(n, radius, g, ω0, Qext)
+        new(n, radius, g, ω0, Qext, Qext * π * radius^2 * n)
+    end
 end
 
 probe(comp::Fixed, r::Point) = nothing
@@ -44,6 +49,7 @@ radius(comp::Fixed, r::Point, ::Nothing) = comp.radius
 mie_qext(comp::Fixed, r::Point, ::Nothing) = comp.Qext
 mie_g(comp::Fixed, r::Point, ::Nothing) = comp.g
 mie_ω0(comp::Fixed, r::Point, ::Nothing) = comp.ω0
+νmiemax(comp::Fixed) = comp.νmiemax
 
 """
   Create a FixedComp composition type for a fixed radius and droplet density.
@@ -53,10 +59,16 @@ function fixednr(λ, n, radius)
     Fixed(n, radius, g, ω0, Qext)
 end
 
+function Fixed(params::Params)
+    @unpack λ, nscat, radius = params
+    fixednr(λ, nscat, radius)
+end
+
 
 struct VariableNR{T,M} <: CloudComposition
     nrfetch::T
     miefit::M
+    νmiemax::Float64
 end
 
 probe(comp::VariableNR, r::Point) = radius(comp.nrfetch, r)
@@ -64,3 +76,4 @@ density(comp::VariableNR, r::Point, _) = density(comp.nrfetch, r)
 mie_qext(comp::VariableNR, r::Point, radius) = mie_qext(comp.miefit, radius)
 mie_g(comp::VariableNR, r::Point, radius) = mie_g(comp.miefit, radius)
 mie_ω0(comp::VariableNR, r::Point, radius) = mie_ω0(comp.miefit, radius)
+νmiemax(comp::VariableNR) = comp.νmiemax

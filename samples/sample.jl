@@ -21,7 +21,7 @@ using CloudScat
 const co = CloudScat.constants
 
 function run()
-    params = init_params(
+    params = Params(
         # NUmber of simulated photons
         N = 400000,
 
@@ -57,8 +57,9 @@ function run()
     # immediately discarded.
     domain = Cylinder(7 * co.kilo, 60 * co.kilo, 0, 0, 200 * co.kilo)
     
-    # Set a homogeneous cloud droplet density and radius
-    composition = fixednr(params.λ, params.nscat, params.radius)
+    # Set a homogeneous cloud droplet density and radius.
+    # See variable_droplet_radius for how to deal with inhomogeneous clouds.
+    composition = Fixed(params)
     
     # Define the full simulation world
     world = World(cloud, domain, composition)

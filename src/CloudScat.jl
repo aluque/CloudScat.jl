@@ -11,7 +11,7 @@ using Dates
 using ProgressMeter
 using Random
 
-export Point, World, Observer, fixednr, Fixed, VariableNR
+export Params, Point, World, Observer, fixednr, Fixed, VariableNR
 
 const Point = SVector{3, Float64}
 
@@ -67,19 +67,6 @@ reweight(s::Null, w, wmin) = w
 # Whether a particle can scatter
 scatters(s::Null) = false
 scatters(s::Union{Rayleigh, Mie, Isotropic}) = true
-
-
-"""
-    MieSolution
-
-The parameters obtained for a Mie scattering computation instances of this
-struct should be returned by probemie(r).
-"""
-struct MieSolution
-    g::Float64
-    ω0::Float64
-    Qext::Float64
-end
 
 
 struct World{Tc,Td,Tcomp}
@@ -140,6 +127,8 @@ function main(params::Params, world::World, observers::Vector{Observer};
     logger = ConsoleLogger(meta_formatter=fmt)
 
     with_logger(logger) do
+        @info "CloudScat (c) Alejandro Luque IAA-CSIC, 2020"
+        @info "Mie solver by Olli Wilkman (https://github.com/dronir/MieScatter.jl)"
         # Print a list of parameters
         @info "Input parameters:" params
         
@@ -395,8 +384,9 @@ different collision rates in and out of the cloud.
 DEPRECATED: DOES NOT WORK
 """
 @fastmath function travel(r, μ, world::World, params::Params; ϵ=1e-3)
-    @unpack νmax, νraymax = params
-
+    @unpack νraymax = params
+    νmax = νraymax + νmiemax(world.comp)
+    
     # Select the optical depth to travel
     τ = -log(trand())
 
@@ -424,8 +414,9 @@ Sample the travel distance a single particle given its position `r` and
 its direction `μ`.
 """
 @fastmath function travel_null(r, μ, world::World, params::Params; ϵ=1e-3)
-    @unpack νmax = params
-
+    @unpack νraymax = params
+    νmax = νraymax + νmiemax(world.comp)
+    
     # Select the optical depth to travel
     τ = -log(trand())
     τ / νmax
@@ -439,7 +430,9 @@ end
 Choose the type of scattering event, depending on the altitude `z`. 
 """
 @inline function choosescat(r, world::World, params::Params)::ScatteringType
-    @unpack νmax, nair, H, σray, νray_ground, c, g0, r0, a = params
+    @unpack νraymax, nair, H, σray, νray_ground = params
+    νmax = νraymax + νmiemax(world.comp)
+
     inside(world.domain, r) || return Null
 
     if inside(world.cloud, r)
@@ -494,7 +487,6 @@ Computes Mie collision rate at a given point.
 """
 function miecollrate(r::Point, w::World, params::Params)
     inside(w.cloud, r) || return zero(Float64)
-    @unpack c = params
     loc = probe(w.comp, r)
 
     # Is the computation of ω0, g optimized out?
@@ -502,19 +494,6 @@ function miecollrate(r::Point, w::World, params::Params)
     Qext * π * radius(w.comp, r, loc)^2 * density(w.comp, r, loc)
 end
 
-
-"""
-    s = evalmie(scat, r, params)
-
-Obtain a solution of the Mie scattering problem by using the previously
-computed fit in params.
-"""
-@inline @fastmath function evalmie(radius, params)
-    @unpack g0, r0, a, c = params
-    (g = g0 * radius / (radius + r0),
-     ω0 = 1. - a * radius,
-     Qext = 2. + c * power34(radius))
-end
 
 
 """ 
