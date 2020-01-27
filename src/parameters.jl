@@ -115,7 +115,9 @@ function init_params(;kw...)
         ω0 = 1. - a * radius
         
         @info "Mie scattering parameters computed for λ=$(λ*1e9) nm" miefit
-        @info "For radius=$(radius*1e6) μm" g ω0 Qext
+        @info "For radius=$(radius*1e6) μm (interpolated)" g ω0 Qext
+        g, ω0, Qext = MieParams.compute(radius, λ)
+        @info "For radius=$(radius*1e6) μm (computed)"  g ω0 Qext
         
         kwd = Dict(pairs(kw))
         (:g0 in keys(kw)) || (kwd[:g0] = miefit.g0)
