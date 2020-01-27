@@ -11,13 +11,15 @@ using Dates
 using ProgressMeter
 using Random
 
-export Params, Point, World, Observer, fixednr, Fixed, VariableNR
+export Params, Point, World, Observer, MieFit, Fixed, VariableNR, mie_qext
 
 const Point = SVector{3, Float64}
 
 include("constants.jl")
 include("parameters.jl")
 include("mieparams.jl")
+import .MieParams: mie_qext, mie_g, mie_ω0, MieFit
+
 include("composition.jl")
 include("geometry.jl")
 #include("phasefuncs.jl")

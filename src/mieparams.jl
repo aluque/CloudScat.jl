@@ -13,6 +13,8 @@ using Interpolations
 using DelimitedFiles
 using Formatting
 
+export mie_qext, mie_g, mie_ω0, MieFit
+
 # Unfortunately the julia package manager does not really work for dependencies
 # on unregistered packages.  And it seems that nothing really works for
 # sub-packages so I could also not use them.  This was the only half-satisfactory

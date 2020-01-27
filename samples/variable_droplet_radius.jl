@@ -20,8 +20,26 @@ using CloudScat
 
 const co = CloudScat.constants
 
+struct Composition end
+
+# Peak altitude and radius
+const zmax, rmax = 9 * co.kilo, 20 * co.micro
+
+# Altitude and value of the smaller radius 
+const zmin, rmin = 12 * co.kilo, 10 * co.micro
+
+const nscat = 100 * co.centi^-3
+
+# We use a parabolic dependence
+function CloudScat.radius(::Composition, r::Point)
+    rmax - (rmax - rmin) * (r[3] - zmax)^2 / (zmin - zmax)^2
+end
+
+CloudScat.density(::Composition, r::Point) = nscat
+    
+    
 function run()
-    params = init_params(
+    params = Params(
         # NUmber of simulated photons
         N = 400000,
 
@@ -59,30 +77,17 @@ function run()
     # immediately discarded.
     domain = Cylinder(7 * co.kilo, 60 * co.kilo, 0, 0, 200 * co.kilo)
     
-    # A function to set inhomogeneous densities of scattering particles
-    # Here we just use a homogeneous one.
-    nfunc(r::Point) = params.nscat
-
-    # You can use rfunc here to set am inhomogeneous radius of the cloud droplets
-    # Here we set one that peaks at 20 μm at the center of the cloud at 9 km
-    # but goes down to 10 μm at the cloud upper and lower boundaries
-
-    # Peak altitude and radius
-    zmax, rmax = 9 * co.kilo, 20 * co.micro
-
-    # Altitude and value of the smaller radius 
-    zmin, rmin = 12 * co.kilo, 10 * co.micro
-
-    # We use a parabolic dependence
-    rfunc(r::Point) = rmax - (rmax - rmin) * (r[3] - zmax)^2 / (zmin - zmax)^2
+    miefit = MieFit(params.λ)
+    νmiemax = mie_qext(miefit, rmax) * π * rmax^2 * nscat
     
+    composition = VariableNR(Composition(), miefit, νmiemax)
+                             
     # Define the full simulation world
-    world = World(cloud, domain, nfunc, rfunc)
+    world = World(cloud, domain, composition)
 
     # Observers record a time curve and an image of received light.  You can
     # set up as many observers as you wish but they have a significant impact
     # on performance.
-
     observers = [Observer(
         # Location of the observer
         position = [0, 0, 400 * co.kilo],

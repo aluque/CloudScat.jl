@@ -73,7 +73,8 @@ end
 
 probe(comp::VariableNR, r::Point) = radius(comp.nrfetch, r)
 density(comp::VariableNR, r::Point, _) = density(comp.nrfetch, r)
-mie_qext(comp::VariableNR, r::Point, radius) = mie_qext(comp.miefit, radius)
-mie_g(comp::VariableNR, r::Point, radius) = mie_g(comp.miefit, radius)
-mie_ω0(comp::VariableNR, r::Point, radius) = mie_ω0(comp.miefit, radius)
+radius(comp::VariableNR, r::Point, rad) = rad
+mie_qext(comp::VariableNR, r::Point, rad) = mie_qext(comp.miefit, rad)
+mie_g(comp::VariableNR, r::Point, rad) = mie_g(comp.miefit, rad)
+mie_ω0(comp::VariableNR, r::Point, rad) = mie_ω0(comp.miefit, rad)
 νmiemax(comp::VariableNR) = comp.νmiemax

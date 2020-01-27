@@ -58,7 +58,7 @@ function run()
     domain = Cylinder(7 * co.kilo, 60 * co.kilo, 0, 0, 200 * co.kilo)
     
     # Set a homogeneous cloud droplet density and radius.
-    # See variable_droplet_radius for how to deal with inhomogeneous clouds.
+    # See variable_droplet_radius.jl for how to deal with inhomogeneous clouds.
     composition = Fixed(params)
     
     # Define the full simulation world
