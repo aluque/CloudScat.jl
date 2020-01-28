@@ -20,21 +20,26 @@ using CloudScat
 
 const co = CloudScat.constants
 
+# We specify a variable composition through a new type that allows CloudScat
+# to dispatch on it whenever it has to access e.g. the radius or density.
 struct Composition end
 
-# Peak altitude and radius
+# For the droplet size we will set up a parabolic profile with a maximum at zmax
+# where the radius is rmax.
 const zmax, rmax = 9 * co.kilo, 20 * co.micro
 
-# Altitude and value of the smaller radius 
+# The minimum radius is reached at zmin and has a value of rmin.
 const zmin, rmin = 12 * co.kilo, 10 * co.micro
 
+# In this case we consider a constant density of scatterers.  One may use
+# a more complex method in CloudScat.density below.
 const nscat = 100 * co.centi^-3
 
-# We use a parabolic dependence
+# Now we overload the CloudScat.radius and CloudScat.density functions to
+# dispacth on the type that we have just defined.
 function CloudScat.radius(::Composition, r::Point)
     rmax - (rmax - rmin) * (r[3] - zmax)^2 / (zmin - zmax)^2
 end
-
 CloudScat.density(::Composition, r::Point) = nscat
     
     
@@ -77,9 +82,19 @@ function run()
     # immediately discarded.
     domain = Cylinder(7 * co.kilo, 60 * co.kilo, 0, 0, 200 * co.kilo)
     
+    # We are giving a location-dependent radius but we need also to specify
+    # how the Mie parameters are calculated for that radius (solving the
+    # Mie problem for each collision is prohibitively expensive).  We use
+    # the MieFit type that uses reasonable fits for the parameters.  The fits
+    # depend on the wavelength, which is needed for the initialization.
     miefit = MieFit(params.λ)
+
+    # We also have to provide a max. collision rate for the null collision
+    # method.  The only requirement is that the actual rate never exceeds this
+    # but the code is more efficient if the bound is tight.
     νmiemax = mie_qext(miefit, rmax) * π * rmax^2 * nscat
     
+    # We put everything together into a VariableNR instance.
     composition = VariableNR(Composition(), miefit, νmiemax)
                              
     # Define the full simulation world
