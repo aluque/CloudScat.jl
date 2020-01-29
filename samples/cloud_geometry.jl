@@ -98,25 +98,25 @@ function run()
     # a small semi-spherical "hole" on top.
     
     # First a 20-km wide cylinder:
-    cyl = Cylinder(7 * co.kilo,  12 * co.kilo, 0, 0, 20 * co.kilo)
+    cyl = Cylinder(7 * co.kilo,  10 * co.kilo, 0, 0, 20 * co.kilo)
 
     # Now a cone on the axis
-    cone = Cone(11 * co.kilo, 15 * co.kilo, 0, 0, 19 * co.kilo,
-                1.5)
+    cone = Cone(9 * co.kilo, 15 * co.kilo, 0, 0, 25 * co.kilo,
+                0.75)
 
     # Finally to define the ellipsiod we start with a sphere centered on the
     # origin with radius 1 km.
     sph = Sphere(0, 0, 0, 1 * co.kilo)
 
-    # We deform it to an ellipsoid with axes (8 km, 6 km, 1 km) and move it to
+    # We deform it to an ellipsoid with axes (12 km, 10 km, 2 km) and move it to
     # (0, 0, 15 km)
-    map = AffineMap(SMatrix{3, 3, Float64}(Diagonal([8, 6, 1])),
+    map = AffineMap(SMatrix{3, 3, Float64}(Diagonal([12, 10, 2])),
                     SVector{3, Float64}([0, 0, 15 * co.kilo]))
     ellipsoid = TransformedShape(map, sph)
     
     # Now the hole that we will substract from the whole, slightly shifted in the
     # y direction.
-    hole = Sphere(0, 1 * co.kilo, 15 * co.kilo, 1 * co.kilo)
+    hole = Sphere(0, 1 * co.kilo, 17 * co.kilo, 3 * co.kilo)
     
     # Finally we combine everything together
     cloud = shapediff(union(cyl, cone, ellipsoid), hole)
@@ -138,7 +138,7 @@ function run()
 
     observers = [Observer(
         # Location of the observer
-        position = [0, 200 * co.kilo, 400 * co.kilo],
+        position = [200 * co.kilo, 200 * co.kilo, 400 * co.kilo],
         
         # Sampling interval
         tsample = 1e-5,
@@ -152,6 +152,15 @@ function run()
         # camera pixels
         pixels = 1024)]
 
+    viewpoint = "{" * join(observers[1].r, ", ") * "}"
+    println("To visualize the cloud geometry with Mathematica use:")
+    println()
+    println("R = ", mathematica(cloud))
+    println("""RegionPlot3D[R, PlotTheme -> "Classic", Axes -> True, 
+        PlotStyle -> Directive[Opacity[0.5], Gray, Specularity[White, 20]], 
+        PlotPoints -> 100, ViewPoint -> $viewpoint]
+    """)
+    println()
     basename = splitext(splitdir(@__FILE__)[2])[1]
 
     # The saveto option specifies the output file.  Leave it as it is to base

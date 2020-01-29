@@ -3,7 +3,7 @@
 using LinearAlgebra, CoordinateTransformations
 
 export Shape, Cylinder, Sphere, Cone, Plane, Empty, shapediff, inside,
-    TransformedShape
+    TransformedShape, mathematica
 
 
 abstract type Shape; end
@@ -384,3 +384,71 @@ inside(s::ShapeSubstract, a::Point) = inside(s.shape1, a) && !inside(s.shape2, a
 function inside(s::TransformedShape, a::Point)
     inside(s.shape, s.inv(a))
 end
+
+
+# To facilitate visualization we provide methods that allow the construction of
+# a Mathematica expression that can be viewed with Mathematica versions above
+# 11.2
+mathlist(v) = "{" * join(v, ", ") * "}"
+mathcall(func, v...) = func * "[" * join(v, ", ") * "]"
+
+function mathematica(fig::Sphere)
+    mathcall("Ball", mathlist([fig.xc, fig.yc, fig.zc]), fig.R)
+end
+
+function mathematica(fig::Cylinder)
+    p1 = [fig.xc, fig.yc, fig.bottom]
+    p2 = [fig.xc, fig.yc, fig.top]
+    
+    mathcall("Cylinder", mathlist([mathlist(p1), mathlist(p2)]),
+             fig.R)
+end
+
+function mathematica(fig::Plane)
+    mathcall("HalfSpace", mathlist([0, 0, fig.up ? -1 : 1]),
+             mathlist([0, 0, fig.z]))
+end
+
+# Note that we are not currently supporting "double cones"
+function mathematica(fig::Cone)
+    rbottom = fig.m * abs(fig.bottom - fig.zv)
+    rtop = fig.m * abs(fig.top - fig.zv)
+    vertex = [fig.xv, fig.yv, fig.zv]
+
+    if rbottom > rtop
+        base = [fig.xv, fig.yv, fig.bottom]
+        plane = Plane(fig.top, false)
+    else
+        base = [fig.xv, fig.yv, fig.top]
+        plane = Plane(fig.top, true)
+    end
+    mathcall("RegionIntersection", 
+             mathcall("Cone", mathlist([mathlist(base), mathlist(vertex)]),
+                      rbottom),
+             mathematica(plane))
+end
+
+function mathematica(fig::ShapeUnion)
+    mathcall("RegionUnion",
+             [mathematica(x) for x in fig.shapes]...)
+end
+
+function mathematica(fig::ShapeIntersect)
+    mathcall("RegionIntersection",
+             [mathematica(x) for x in fig.shapes]...)
+end
+
+function mathematica(fig::ShapeSubstract)
+    mathcall("RegionDifference",
+             mathematica(fig.shape1), mathematica(fig.shape2))
+end
+
+function mathematica(fig::TransformedShape)
+    mathcall(
+        mathcall("AffineTransform",
+                 mathlist(
+                     [mathlist([mathlist(r) for r in eachrow(fig.trans.linear)]),
+                      mathlist(fig.trans.translation)])),
+        mathematica(fig.shape))
+end
+
