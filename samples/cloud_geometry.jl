@@ -153,12 +153,15 @@ function run()
         pixels = 1024)]
 
     viewpoint = "{" * join(observers[1].r, ", ") * "}"
+    viewdir = "{" * join([observers[1].r[1], observers[1].r[2], 0.0],  ", ") * "}"
     println("To visualize the cloud geometry with Mathematica use:")
     println()
     println("R = ", mathematica(cloud))
     println("""RegionPlot3D[R, PlotTheme -> "Classic", Axes -> True, 
-        PlotStyle -> Directive[Opacity[0.5], Gray, Specularity[White, 20]], 
-        PlotPoints -> 100, ViewPoint -> $viewpoint]
+        PlotStyle -> Directive[Opacity[0.75], RGBColor[.6, .65, .85], 
+            Specularity[0.2]], 
+        Lighting -> "Neutral", PlotPoints -> 100, 
+        ViewVector -> {$viewpoint, $viewdir}]
     """)
     println()
     basename = splitext(splitdir(@__FILE__)[2])[1]
