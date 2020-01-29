@@ -27,6 +27,7 @@ include("rayleigh.jl")
 
 const co = constants
 const SAMPLES_PATH = normpath(joinpath(@__DIR__, "..", "samples"))
+const UTIL_PATH = normpath(joinpath(@__DIR__, "..", "util"))
 
 # For the dynamical dispatch we define types of collisions
 abstract type ScatteringType end 

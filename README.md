@@ -37,7 +37,13 @@ or, if you prefer to do everything from the julia prompt,
 julia> include("sample.jl"); run()
 ```
 
-If the simulation finishes correctly it produces a file called `sample.h5` that contains the output data from the simulation. To view this output you can use one of the scripts contained in the `util` folder of the repo. For example to plot the simulated photometer data of observer one uses
+If the simulation finishes correctly it produces a file called `sample.h5` that contains the output data from the simulation. To view this output you can use one of the scripts contained in the `util` folder of the repo.  You can find the location of this folder in your installation by
+```julia
+> using CloudScat
+> CloudScat.UTIL_PATH
+```
+
+For example to plot the simulated photometer data of observer one uses
 
 ```bash
 > python plot_photo.py input_file.h5 --observer=1
@@ -45,7 +51,7 @@ If the simulation finishes correctly it produces a file called `sample.h5` that 
 
 To see the image recorded by the same observer use
 ```bash
-> python plot_image input_file.h5 --observer=1
+> python plot_image.py input_file.h5 --observer=1
 ```
 
 ### Complex geometries
