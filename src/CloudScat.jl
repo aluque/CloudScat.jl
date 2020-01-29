@@ -332,8 +332,10 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     end 
 
     # Now update the image at the given pixels
-    px = 1 + Int64(fld(μobs[1] / μobs[3] + o.umax, o.δu))
-    py = 1 + Int64(fld(μobs[2] / μobs[3] + o.umax, o.δu))
+    # The minus are here because to be more user-friendly we invert the
+    # image formed in the sensor.
+    px = 1 + Int64(fld(-μobs[1] / μobs[3] + o.umax, o.δu))
+    py = 1 + Int64(fld(-μobs[2] / μobs[3] + o.umax, o.δu))
     
     if 0 < px <= size(o.img)[1] && 0 < py <= size(o.img)[2]
         # The solid angle subtended by the pixel is roughly
