@@ -56,7 +56,9 @@ in the example file `cloud_geometry.jl`. If you want to define new geometrical
 shapes beyond those provided by default, look at `src/geometry.jl`. A geometry 
 type must define methods to compute (quickly if possible) intersections between 
 the defined shape and a straight line and to test whether a point is inside the 
-figure.
+figure.  For an example on how to do this look at `src/rings.jl`, where the cloud
+top has the shape of concentric rings.
+
 
 ### Parallel computations
 
