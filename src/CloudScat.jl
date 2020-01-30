@@ -10,6 +10,7 @@ using Logging
 using Dates
 using ProgressMeter
 using Random
+using FastGaussQuadrature
 
 export Params, Point, World, Observer, MieFit, Fixed, VariableNR, mie_qext
 
@@ -72,10 +73,19 @@ scatters(s::Null) = false
 scatters(s::Union{Rayleigh, Mie, Isotropic}) = true
 
 
-struct World{Tc,Td,Tcomp}
+struct World{Tc,Td,Tcomp,N}
     cloud::Tc
     domain::Td
     comp::Tcomp
+    quadrule::Tuple{SVector{N}, SVector{N}}
+
+    function World(cloud::Tc, domain::Td, comp::Tcomp, n::Int) where {Tc, Td, Tcomp}
+        x, w = gausslegendre(n)
+        quadrule = (SVector{n}(x), SVector{n}(w))
+        new{Tc, Td, Tcomp, n}(cloud, domain, comp, quadrule)
+    end
+
+    World(cloud, domain, comp) = World(cloud, domain, comp, 3)
 end
 
 
@@ -163,12 +173,6 @@ function save(fname, observers::Vector{Observer}, params::Params)
         args = ("shuffle", (),
                 "deflate", 3)
 
-        # g = g_create(file, "population")
-
-        # g["r", args...] = p.r
-        # g["mu", args...] = p.μ
-        # g["t", args...] = p.t
-
         for (i, obs) in enumerate(observers)
             g = g_create(file, format("obs{:05d}", i))
             attrs(g)["altitude"] = obs.r[3]
@@ -242,10 +246,11 @@ end
 
 
 """
-    iterate!(p, observers, params)
+    iterate(r, μ, t, w, world, observers, params)
 
-Iterate over all particles in the population `p` and advance them, including
-their eventual observation by `observers`.
+Iterate over steps for a single particle with starting position `r`,
+direction `μ`, time `t` and weight `w`.  The particles lives in `world` and
+may be detected by a list of `observers`.  `params` are the simulation parameters.
 """
 function iterate(r, μ, t, w, world::World, observers::Vector{Observer},
                   params::Params)
