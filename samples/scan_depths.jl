@@ -28,7 +28,7 @@ const co = CloudScat.constants
 function runone(lmbd, radius_um, h_km)
     params = Params(
         # NUmber of simulated photons
-        N = 1e6,
+        N = 5e6,
 
         # The wavelength of the scattered light
         λ = lmbd * co.nano,
