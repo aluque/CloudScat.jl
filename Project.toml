@@ -1,7 +1,7 @@
 name = "CloudScat"
 uuid = "a26f3e98-749e-11e9-24f2-331d4bb404a8"
 authors = ["luque <aluque@iaa.es>"]
-version = "0.1.0"
+version = "1.0.0"
 
 [deps]
 CoordinateTransformations = "150eb455-5306-5404-9cee-2592286d6298"
