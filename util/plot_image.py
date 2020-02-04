@@ -35,6 +35,11 @@ def get_parser():
                         help="Limits of the color axis (c0:c1)", 
                         action='store', default=None)
 
+    parser.add_argument("--output", "-o",
+                        action="store",
+                        help="Output file",
+                        default=None)
+
     return parser
 
 
@@ -45,6 +50,7 @@ def main():
     
     fp = h5py.File(args.input, "r")
     
+    # Note that the image is transposed wrt the julia array.
     img = np.array(fp[f"obs{obs:05d}/image"])
 
     plt.figure(f"obs{obs:05d}")
@@ -57,13 +63,13 @@ def main():
     if args.xlim is not None:
         xlim = [float(v) for v in args.xlim.split(':')]
         xfilter = np.logical_and(xlim[0] < x, x < xlim[1])
-        img = img[xfilter, :]
+        img = img[:, xfilter]
         x = x[xfilter]
         
     if args.ylim is not None:
         ylim = [float(v) for v in args.ylim.split(':')]
         yfilter = np.logical_and(ylim[0] < y, y < ylim[1])
-        img = img[:, yfilter]
+        img = img[yfilter, :]
         y = y[yfilter]
 
     if args.clim is not None:
@@ -83,7 +89,10 @@ def main():
     plt.xlabel("px")
     plt.ylabel("py")
 
-    plt.show()
+    if args.output is not None:
+        plt.savefig(args.output)
+    else:
+        plt.show()
 
     
     
