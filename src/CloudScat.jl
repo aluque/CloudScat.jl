@@ -77,7 +77,7 @@ struct World{Tc,Td,Tcomp,N}
     cloud::Tc
     domain::Td
     comp::Tcomp
-    quadrule::Tuple{SVector{N}, SVector{N}}
+    quadrule::Tuple{SVector{N,Float64}, SVector{N,Float64}}
 
     function World(cloud::Tc, domain::Td, comp::Tcomp, n::Int) where {Tc, Td, Tcomp}
         x, w = gausslegendre(n)
@@ -310,7 +310,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     # Optical depth to the observer
     ν(r::Point) = miecollrate(r, w, params)
 
-    τmie = optpath(w.cloud, ν, r, o.r)
+    τmie = optpath(w.cloud, ν, r, o.r, w.quadrule)
 
     # Optical depth to the observer from Rayleigh scattering
     τray = νray_ground * H / μobs[3] * (exp(-r[3] / H) - exp(-o.r[3] / H))
@@ -552,7 +552,7 @@ end
 Compute the optical path between points `a` and `b` in a given geometry
 `geom` and with a position-dependent collision rate `ν`.
 """
-function optpath(geom, ν::Function, a::Point, b::Point)
+function optpath(geom, ν::Function, a::Point, b::Point, quadrule)
     v = ListAccumulator(get_interface_list())
 
     interfaces!(v, geom, a, b)
@@ -565,19 +565,13 @@ function optpath(geom, ν::Function, a::Point, b::Point)
     L = norm(a - b)
     # path = L * quadgk(f, 0., v..., 1.0,
     #                   atol=1e-3, rtol=1e-2, order=3)[1]
-    path = L * quadgauss(f, v.list)
+
+    path = L * quadgauss(f, v.list, quadrule)
     path
 end
 
 
-# Pre-computed order-3 quadrature
-const quadrule = (@SVector([-0.7745966692414834,
-                            0.0,
-                            0.7745966692414834]),
-                  @SVector([0.5555555555555556,
-                            0.8888888888888888,
-                            0.5555555555555556]))
-@fastmath function quadgauss(f::Function, x)
+@fastmath function quadgauss(f::Function, x, quadrule)
     xq, wq = quadrule
     x1 = x[1]
 
