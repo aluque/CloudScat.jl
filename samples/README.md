@@ -5,6 +5,7 @@ This folder contains example files for CloudScat.  Each example is heavily docum
 ## File description
 
 * `sample.jl`: The simplest example.  The cloud is modelled as a wide cylinder with a homogeneous composition.
+* `scan_depths.jl`: A set of simulations for an impulsive and localized sources at varying cloud depth and droplet radius.
 * `cloud_geometry.jl`: Shows how to define complex cloud geometries and how to produce Mathematica code to render the cloud geometry in 3D.
 * `variable_droplet_radius.jl`: Here we use an inhomogeneous cloud composition where the droplet radius changes as a funcion of altitude.
 * `rings.jl`: Shows how to define you own geometrical shapes and in particular how to create new shapes based on an implicit equation.  Here we model the cloud top as containing concentric ondulations.
