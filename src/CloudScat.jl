@@ -131,6 +131,21 @@ function Observer(;position, fov, pixels, tsample, nsamples)
 end
 
 
+"""
+    projectpx(obs, px, H)
+
+  Project pixel coordinates into real space.  
+
+  Finds a pair `[x, y]` of positions that, at an altitude `H` would be projected
+  into pixels `px = [xp, yp]` of the camera.  This is useful to simulate 
+  observations with the same geometry as an existing observation.
+"""
+function projectpx(obs::Observer, px::AbstractVector, H)
+    @. -(obs.r[3] - H) * (obs.umax - px * obs.δu) + obs.r[[1, 2]]
+end
+
+
+
 function main(params::Params, world::World, observers::Vector{Observer};
               saveto::Union{String,Nothing}=nothing)
 
