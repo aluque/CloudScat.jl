@@ -56,6 +56,8 @@ mie_ω0(comp::Fixed, r::Point, ::Nothing) = comp.ω0
 """
 function fixednr(λ, n, radius)
     g, ω0, Qext = MieParams.compute(radius, λ)
+    @info "Mie parameters" g ω0 Qext
+    
     Fixed(n, radius, g, ω0, Qext)
 end
 
