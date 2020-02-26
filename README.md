@@ -10,7 +10,7 @@
 The code is distributed as a [julia](https://julialang.org) package.  To install it, after you have downloaded and installed julia, start julia and go into the package manager by pressing `]`.  Then type
 
 ```julia
-add http://gitlab.com/aluque/cloudscat
+add http://github.com/aluque/CloudScat.jl
 ```
 You can exit the package manager by pressing backspace at the beginning of the prompt.
 
