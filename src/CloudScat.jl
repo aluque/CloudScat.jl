@@ -10,9 +10,12 @@ using Logging
 using Dates
 using ProgressMeter
 using Random
+using Interpolations
 using FastGaussQuadrature
 
 export Params, Point, World, Observer, MieFit, Fixed, VariableNR, mie_qext
+export NoAbsorption, StratifiedAbsorption
+
 
 const Point = SVector{3, Float64}
 
@@ -22,6 +25,7 @@ include("mieparams.jl")
 import .MieParams: mie_qext, mie_g, mie_ω0, MieFit
 
 include("composition.jl")
+include("absorption.jl")
 include("geometry.jl")
 #include("phasefuncs.jl")
 include("rayleigh.jl")
@@ -73,19 +77,22 @@ scatters(s::Null) = false
 scatters(s::Union{Rayleigh, Mie, Isotropic}) = true
 
 
-struct World{Tc,Td,Tcomp,N}
+struct World{Tc,Td,Tcomp,Tabs <: AbstractAbsorber,N}
     cloud::Tc
     domain::Td
     comp::Tcomp
+    absorber::Tabs
     quadrule::Tuple{SVector{N,Float64}, SVector{N,Float64}}
 
-    function World(cloud::Tc, domain::Td, comp::Tcomp, n::Int) where {Tc, Td, Tcomp}
+    function World(cloud::Tc, domain::Td, comp::Tcomp, absorb::Tabs,
+                   n::Int) where {Tc, Td, Tcomp, Tabs}
         x, w = gausslegendre(n)
         quadrule = (SVector{n}(x), SVector{n}(w))
-        new{Tc, Td, Tcomp, n}(cloud, domain, comp, quadrule)
+        new{Tc, Td, Tcomp, Tabs, n}(cloud, domain, comp, absorb, quadrule)
     end
 
-    World(cloud, domain, comp) = World(cloud, domain, comp, 3)
+    World(cloud, domain, comp) = World(cloud, domain, comp, NoAbsorption(), 3)
+    World(cloud, domain, comp, absorb) = World(cloud, domain, comp, absorb, 3)
 end
 
 
@@ -277,15 +284,19 @@ function iterate(r, μ, t, w, world::World, observers::Vector{Observer},
         # Propagate
         l = travel_null(r, μ, world, params)
         
-        r = r + μ * l
+        r1 = r + μ * l
         t += l / co.c
         
         # Check if inside the domain
-        if !inside(world.domain, r)
+        if !inside(world.domain, r1)
             w = 0.0
             break
         end
-        
+
+        # Absorption during the propagation
+        w *= transmittance(world.absorber, r, r1, μ)
+        r = r1
+
         # Choose scattering type
         scat = choosescat(r, world, params)
         
@@ -332,6 +343,9 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
 
     τ = τmie + τray
     
+    # Transmittance due to background absorption
+    trans = transmittance(w.absorber, r, o.r, μobs)
+    
     # The probability dens that the photon reaches the cloud top w/o scattering
     # NB: p(μ) gives the scattering probablity per unit solid angle,
     # imagine that the photon is a super-particle representing N real photons. Now
@@ -339,7 +353,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     # - the surface at the observer subtended by this solid angle is s^2 dΩ.
     # So the number of photons per unit surface at the observer is
     # N p(μ) / s^2.  To this we have to add an attenuation factor exp(-s / Λ).
-    f = p(s, μscat) * exp(-τ) / (sobs^2 * N)
+    f = p(s, μscat) * exp(-τ) * trans / (sobs^2 * N)
     
     # Now find time of observation if the particle manages to escape
     tobs = t + sobs / co.c
@@ -458,7 +472,7 @@ Choose the type of scattering event, depending on the altitude `z`.
     @unpack νraymax, nair, H, σray, νray_ground = params
     νmax = νraymax + νmiemax(world.comp)
 
-    inside(world.domain, r) || return Null
+    inside(world.domain, r) || return Null()
 
     if inside(world.cloud, r)
         loc = probe(world.comp, r)

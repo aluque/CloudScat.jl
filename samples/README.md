@@ -9,6 +9,7 @@ This folder contains example files for CloudScat.  Each example is heavily docum
 * `cloud_geometry.jl`: Shows how to define complex cloud geometries and how to produce Mathematica code to render the cloud geometry in 3D.
 * `variable_droplet_radius.jl`: Here we use an inhomogeneous cloud composition where the droplet radius changes as a funcion of altitude.
 * `rings.jl`: Shows how to define you own geometrical shapes and in particular how to create new shapes based on an implicit equation.  Here we model the cloud top as containing concentric ondulations.
+* `ozone_absorption.jl`: Implements ozone absorption for a stratified atmosphere with several ozone profiles and a wavelength of 200 nm.  To run, this example requires files distributed with MODTRAN not included here.
 
 ## Use
 
