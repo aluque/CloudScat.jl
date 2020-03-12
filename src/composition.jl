@@ -52,7 +52,7 @@ mie_ω0(comp::Homogeneous, r::Point, ::Nothing) = comp.ω0
 νmiemax(comp::Homogeneous) = comp.νmiemax
 
 """
-  Create a HomogeneousComp composition type for a given wavelength `λ`and
+  Create a Homogeneous composition instance for a given wavelength `λ`and
   fixed droplet density `n` and droplet radius `r`.
 """
 function Homogeneous(λ, n, radius; refindex="Hale.dat")
