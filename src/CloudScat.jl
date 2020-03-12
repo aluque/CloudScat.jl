@@ -12,17 +12,16 @@ using ProgressMeter
 using Random
 using Interpolations
 using FastGaussQuadrature
+using DelimitedFiles
 
-export Params, Point, World, Observer, MieFit, Fixed, VariableNR, mie_qext
+export Params, Point, World, Observer, Homogeneous, VariableNR
 export NoAbsorption, StratifiedAbsorption
-
 
 const Point = SVector{3, Float64}
 
 include("constants.jl")
 include("parameters.jl")
 include("mieparams.jl")
-import .MieParams: mie_qext, mie_g, mie_ω0, MieFit
 
 include("composition.jl")
 include("absorption.jl")

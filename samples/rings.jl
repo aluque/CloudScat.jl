@@ -92,16 +92,7 @@ function run()
         source_b = [0, 0, 10 * co.kilo],
 
         # Minimum altitude for observations
-        zmin = 7 * co.kilo,
-        
-        # Radius of the scattering particles
-        radius = 10e-6,     
-
-        # Density of the scattering centers.  This is only used to estimate
-        # the mean free path in the null collision method; use the highest
-        # value here and set a inhomogeneous density using the function nfunc
-        # below
-        nscat = 100 * co.centi^-3)
+        zmin = 7 * co.kilo)
     
     # A cylinder is defined as Cylinder(zbottom, ztop, xcenter, ycenter, radius)
     c1 = Cylinder(7 * co.kilo,  15 * co.kilo, 0, 0, 20 * co.kilo)
@@ -118,7 +109,13 @@ function run()
     
     # Set a homogeneous cloud droplet density and radius.
     # See variable_droplet_radius.jl for how to deal with inhomogeneous clouds.
-    composition = Fixed(params)
+    # Radius of the scattering particles
+    radius = 10e-6
+    
+    # Density of the scattering centers.
+    nscat = 100 * co.centi^-3
+
+    composition = Homogeneous(params.λ, nscat, radius)
     
     # Define the full simulation world
     world = World(cloud, domain, composition)

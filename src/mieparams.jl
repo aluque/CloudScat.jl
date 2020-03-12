@@ -6,14 +6,7 @@ https://github.com/dronir/MieScatter.jl
 """
 
 module MieParams
-
-using Parameters
 using FastGaussQuadrature
-using Interpolations
-using DelimitedFiles
-using Formatting
-
-export mie_qext, mie_g, mie_ω0, MieFit
 
 # Unfortunately the julia package manager does not really work for dependencies
 # on unregistered packages.  And it seems that nothing really works for
@@ -24,62 +17,6 @@ using .MieScatter
 
 include("constants.jl")
 const co = constants
-
-# Linear regression
-linreg(x, y) = hcat(fill!(similar(x), 1), x) \ y
-linreg1(x, y) = x \ y
-
-# Fast computation of x^(-3/4)
-power34(x) = 1. / sqrt(x) / sqrt(sqrt(x))
-
-struct MieFit
-    # The assymetry parameter is fit as g = mr / (r + r0)
-    g0::Float64
-    r0::Float64
-
-    # The single-scattering albedo is fit as 1 - ω0 = ar
-    a::Float64
-
-    # The Extinction coefficient is fit as Qext = 2 + cr^-3/4
-    c::Float64
-end
-
-
-function Base.show(io::IO, miefit::MieFit)
-    print(io, "(")
-    for (i, field) in enumerate(fieldnames(MieFit))
-        (i > 1) && print(io, ", ")
-        printfmt(io, "{} = {:.3e}", String(field), getfield(miefit, field))
-    end
-    print(io, ")")
-end
-
-
-# A invalid value for default initialization
-MieFit() = MieFit(NaN, NaN, NaN, NaN)
-
-"""
-    m = MieFit(λ)
-
-Compute the fit parameters to compute g, ω0 and Qext for an arbitrary radius
-in the range 1 μm < r < 100 μm.
-"""
-function MieFit(λ)
-    r = 1 * co.micro:1 * co.micro:100 * co.micro    
-    g, ω0, Qext = compute(r, λ; order=10000)
-
-    # Linear regression always more robust so we fit r/g ~ r/m + r0 / m
-    β = linreg(r, r ./ g)
-    g0, r0 = 1 / β[2], β[1] / β[2]
-
-    a = linreg1(r, 1 .- ω0)[1]
-    c = linreg1(power34.(r), Qext .- 2)[1]
-    MieFit(g0, r0, a, c)
-end
-
-mie_g(m::MieFit, radius) = m.g0 * radius / (radius + m.r0)
-mie_qext(m::MieFit, radius) = 2. + m.c * power34(radius)
-mie_ω0(m::MieFit, radius) = 1. - m.a * radius
 
 """
     g, ω₀, Qext = compute(r, λ, m; order=1000)
@@ -109,26 +46,5 @@ function compute(r::AbstractVector, λ, m; kw...)
     g, ω0, Qext = [[itm[i] for itm in w] for i in 1:3]
     g, ω0, Qext
 end
-
-# If m is not provided, we take it from interpolation of Hale data.
-compute(r, λ; kw...) = compute(r, λ, interp_m(λ); kw...)
-
-# Find the refraction index by interpolation from the Hale data
-function interp_m(λ)
-    fname = joinpath(@__DIR__, "..", "data", "Hale.dat")
-    λ1, n1, k1 = eachcol(readdlm(fname, comments=true))
-
-    # Lambda is in micrometers in the input file.
-    λ1 *= co.micro
-
-    interp_n1 = LinearInterpolation(λ1, n1)
-    interp_k1 = LinearInterpolation(λ1, k1)
-
-    # Here we ensure type stability of the return value
-    a::Float64 = interp_n1(λ)
-    b::Float64 = interp_k1(λ)
-    complex(a, b)
-end
-
 
 end

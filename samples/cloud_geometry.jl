@@ -36,16 +36,7 @@ function run()
         # initially random, isotropic directions.  To use a point source set
         # source_b = source_a
         source_a = [0, 0, 8 * co.kilo],
-        source_b = [0, 0, 13 * co.kilo],
-
-        # Radius of the scattering particles
-        radius = 10e-6,     
-
-        # Density of the scattering centers.  This is only used to estimate
-        # the mean free path in the null collision method; use the highest
-        # value here and set a inhomogeneous density using the function nfunc
-        # below
-        nscat = 100 * co.centi^-3)
+        source_b = [0, 0, 13 * co.kilo])
     
     # World geometry
     # Describe the cloud geometry here.
@@ -127,7 +118,13 @@ function run()
     
     # Set a homogeneous cloud droplet density and radius.
     # See variable_droplet_radius.jl for how to deal with inhomogeneous clouds.
-    composition = Fixed(params)
+    # Radius of the scattering particles
+    radius = 10e-6
+    
+    # Density of the scattering centers.
+    nscat = 100 * co.centi^-3
+
+    composition = Homogeneous(params.λ, nscat, radius)
     
     # Define the full simulation world
     world = World(cloud, domain, composition)

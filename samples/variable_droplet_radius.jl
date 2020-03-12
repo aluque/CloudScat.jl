@@ -56,18 +56,7 @@ function run()
         # initially random, isotropic directions.  To use a point source set
         # source_b = source_a
         source_a = [0, 0, 9 * co.kilo],
-        source_b = [0, 0, 9 * co.kilo],
-
-        # Radius of the scattering particles
-        # When the radius is variable, use the maximum radius.
-        # This is used only to compute the maximum collision rate.
-        radius = 20e-6,     
-
-        # Density of the scattering centers.  This is only used to estimate
-        # the mean free path in the null collision method; use the highest
-        # value here and set a inhomogeneous density using the function nfunc
-        # below
-        nscat = 100 * co.centi^-3)
+        source_b = [0, 0, 9 * co.kilo])
     
     # World geometry
     # Describe the cloud geometry here.  It may consist in combinations of
@@ -82,20 +71,13 @@ function run()
     # immediately discarded.
     domain = Cylinder(7 * co.kilo, 60 * co.kilo, 0, 0, 200 * co.kilo)
     
-    # We are giving a location-dependent radius but we need also to specify
-    # how the Mie parameters are calculated for that radius (solving the
-    # Mie problem for each collision is prohibitively expensive).  We use
-    # the MieFit type that uses reasonable fits for the parameters.  The fits
-    # depend on the wavelength, which is needed for the initialization.
-    miefit = MieFit(params.λ)
-
     # We also have to provide a max. collision rate for the null collision
     # method.  The only requirement is that the actual rate never exceeds this
-    # but the code is more efficient if the bound is tight.
-    νmiemax = mie_qext(miefit, rmax) * π * rmax^2 * nscat
-    
-    # We put everything together into a VariableNR instance.
-    composition = VariableNR(Composition(), miefit, νmiemax)
+    # but the code is more efficient if the bound is tight.  One option
+    # is to provide the highest values of droplet radius and density but
+    # if these peak at different places we incur some inefficiency.
+    # It works for this case however.
+    composition = VariableNR(params.λ, Composition(), rmax, nscat)
                              
     # Define the full simulation world
     world = World(cloud, domain, composition)

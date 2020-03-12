@@ -76,17 +76,8 @@ function run_profile(fname)
         source_a = [0, 0, 10 * co.kilo],
         source_b = [0, 0, 10 * co.kilo],
 
-        # Radius of the scattering particles
-        radius = 10e-6,     
-
         # Minimum weight before a particle is discarded
-        weight_min = 1e-7,
-        
-        # Density of the scattering centers.  This is only used to estimate
-        # the mean free path in the null collision method; use the highest
-        # value here and set a inhomogeneous density using the function nfunc
-        # below
-        nscat = 100 * co.centi^-3)
+        weight_min = 1e-7)
     
     # World geometry
     # Describe the cloud geometry here.  It may consist in combinations of
@@ -103,7 +94,13 @@ function run_profile(fname)
     
     # Set a homogeneous cloud droplet density and radius.
     # See variable_droplet_radius.jl for how to deal with inhomogeneous clouds.
-    composition = Fixed(params)
+    # Radius of the scattering particles
+    radius = 10e-6
+    
+    # Density of the scattering centers.
+    nscat = 100 * co.centi^-3
+
+    composition = Homogeneous(params.λ, nscat, radius)
     
     # Define the full simulation world
     world = World(cloud, domain, composition, absorb)
