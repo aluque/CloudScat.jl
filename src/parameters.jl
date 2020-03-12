@@ -27,15 +27,9 @@ Structure to contain all simulation parameters.
     "Wavelength"
     λ = 337 * co.nano
     
-    "Radius of the scattering particles (for inhom clouds, an upper bound)"
-    radius = 10e-6
-
     "Minimum weight: below, particles are subjected to Russian roulette"
     weight_min = 0.01
     
-    "Scatering particle density"
-    nscat = 100 * co.centi^-3
-
     "Cross-section for Rayleigh scattering"
     σray = Ray.σ(λ)
     
@@ -55,8 +49,6 @@ Structure to contain all simulation parameters.
     νraymax = νray_ground * exp(-zmin / H)
     
     @assert λ > 0
-    @assert radius > 0
-    @assert nscat > 0
     @assert H > 0
     @assert nair > 0
 end
