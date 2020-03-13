@@ -323,7 +323,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
 @inline @fastmath function observeone!(o::Observer, w::World,
                                        s::NonNull,
                                        r, μ, t, weight, params::Params)
-    @unpack N, νray_ground, H, radius = params
+    @unpack N, νray_ground, H = params
     # Distance to the observer
     sobs = norm(o.r - r)
     
