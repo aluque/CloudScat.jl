@@ -242,7 +242,7 @@ function run!(world::World, observers::Vector{Observer}, params::Params)
     @unpack N = params
     
     # This is to allow quick debug runs without changing an input file.
-    N /= parse(Int, get(ENV, "CLOUDSCAT_DEBUG_REDUCTION", "1"))
+    N ÷= parse(Int, get(ENV, "CLOUDSCAT_DEBUG_REDUCTION", "1"))
     
     set_zero_subnormals(true)
     
