@@ -100,6 +100,7 @@ function VariableNR(λ, nrfetch, rmax, nmax; refindex=DEF_REFINDEX_FILE)
     g0, r0, a, c = miefitparams(λ, refindex)
     Qext_max = 2. + c * power34(rmax)
     νmiemax = Qext_max * π * rmax^2 * nmax
+    VariableNR(nrfetch, g0, r0, a, c, νmiemax)
 end
 
 function miefitparams(λ, refindex)
