@@ -19,6 +19,8 @@ A cloud-composition type must implement these methods:
 
 abstract type AbstractComposition end
 
+const DEF_REFINDEX_FILE = "WarrenBrandt.dat"
+
 # Linear regression
 linreg(x, y) = hcat(fill!(similar(x), 1), x) \ y
 linreg1(x, y) = x \ y
@@ -55,7 +57,7 @@ mie_ω0(comp::Homogeneous, r::Point, ::Nothing) = comp.ω0
   Create a Homogeneous composition instance for a given wavelength `λ`and
   fixed droplet density `n` and droplet radius `r`.
 """
-function Homogeneous(λ, n, radius; refindex="Hale.dat")
+function Homogeneous(λ, n, radius; refindex=DEF_REFINDEX_FILE)
     interp = m_interpolator(refindex)
     m = interp(λ)
     
@@ -89,12 +91,12 @@ end
 Compute the fit parameters to compute g, ω0 and Qext for an arbitrary radius
 in the range 1 μm < r < 100 μm.
 """
-function VariableNR(λ, nrfetch, νmiemax; refindex="Hale.dat")
+function VariableNR(λ, nrfetch, νmiemax; refindex=DEF_REFINDEX_FILE)
     g0, r0, a, c = miefitparams(λ, refindex)
     VariableNR(nrfetch, g0, r0, a, c, νmiemax)
 end
 
-function VariableNR(λ, nrfetch, rmax, nmax; datarefindex="Hale.dat")
+function VariableNR(λ, nrfetch, rmax, nmax; datarefindex=DEF_REFINDEX_FILE)
     g0, r0, a, c = miefitparams(λ, refindex)
     Qext_max = 2. + comp.c * power34(rmax)
     νmiemax = Qext_max * π * rmax^2 * nmax
