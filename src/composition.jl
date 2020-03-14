@@ -68,7 +68,7 @@ function Homogeneous(λ, n, radius; refindex=DEF_REFINDEX_FILE)
 end
 
 
-struct VariableNR{T,M} <: AbstractComposition
+struct VariableNR{T} <: AbstractComposition
     nrfetch::T
 
     # The assymetry parameter is fit as g = mr / (r + r0)
@@ -124,8 +124,8 @@ probe(comp::VariableNR, r::Point) = radius(comp.nrfetch, r)
 density(comp::VariableNR, r::Point, _) = density(comp.nrfetch, r)
 radius(comp::VariableNR, r::Point, rad) = rad
 mie_qext(comp::VariableNR, r::Point, rad) = 2. + comp.c * power34(rad)
-mie_g(comp::VariableNR, r::Point, rad) = m.g0 * rad / (rad + m.r0)
-mie_ω0(comp::VariableNR, r::Point, rad) = 1. - m.a * rad
+mie_g(comp::VariableNR, r::Point, rad) = comp.g0 * rad / (rad + comp.r0)
+mie_ω0(comp::VariableNR, r::Point, rad) = 1. - comp.a * rad
 νmiemax(comp::VariableNR) = comp.νmiemax
 
 
