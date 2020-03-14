@@ -29,6 +29,8 @@ include("geometry.jl")
 #include("phasefuncs.jl")
 include("rayleigh.jl")
 
+using .MieParams
+
 const co = constants
 const SAMPLES_PATH = normpath(joinpath(@__DIR__, "..", "samples"))
 const UTIL_PATH = normpath(joinpath(@__DIR__, "..", "util"))
