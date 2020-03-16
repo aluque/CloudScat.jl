@@ -56,7 +56,11 @@ function run()
     # Density of the scattering centers.
     nscat = 100 * co.centi^-3
 
-    composition = Homogeneous(params.λ, nscat, radius)
+    # The refindex keyword is used to specify a data file with the refraction
+    # index table, specified as
+    # wavelengh (micrometers)   n(real part)   n(imaginary part)
+    # For ice use WarrenBrandt.dat
+    composition = Homogeneous(params.λ, nscat, radius, refindex="Hale.dat")
     
     # Define the full simulation world
     world = World(cloud, domain, composition)

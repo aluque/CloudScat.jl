@@ -19,7 +19,7 @@ A cloud-composition type must implement these methods:
 
 abstract type AbstractComposition end
 
-const DEF_REFINDEX_FILE = "WarrenBrandt.dat"
+const DEF_REFINDEX_FILE = "Hale.dat"
 
 # Linear regression
 linreg(x, y) = hcat(fill!(similar(x), 1), x) \ y
