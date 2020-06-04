@@ -10,17 +10,7 @@ Structure to contain all simulation parameters.
 @with_kw_noshow struct Params @deftype Float64
     " Min z for observations"
     zmin = 9 * co.kilo
-    
-    # The source is assumed to be a line joining points a and b below
-    
-    "Location of point a of the source"
-    source_a::SVector{3, Float64} = @SVector [-2 * co.kilo, 2 * co.kilo,
-                                              13 * co.kilo]
-
-    "Location of point b of the source"
-    source_b::SVector{3, Float64} = @SVector [-2 * co.kilo, 2 * co.kilo,
-                                              13 * co.kilo]
-    
+           
     "Initial number of photons"
     N::Int64 = 100000
 

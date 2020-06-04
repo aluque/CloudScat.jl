@@ -6,10 +6,10 @@ export Shape, Cylinder, Sphere, Cone, Plane, Empty, shapediff, inside,
     TransformedShape, mathematica
 
 
-abstract type Shape; end
+abstract type AbstractShape; end
 
 """ A Sphere centered at (`xc`, `yc`, `zc`) with radius `R`. """
-struct Sphere <: Shape
+struct Sphere <: AbstractShape
     xc::Float64
     yc::Float64
     zc::Float64
@@ -21,7 +21,7 @@ end
 A Cylinder between `bottom` < z < `top`, centered at (`xc`, `yc`) and with
 radius `R`.
 """
-struct Cylinder <: Shape
+struct Cylinder <: AbstractShape
     bottom::Float64
     top::Float64
     xc::Float64
@@ -35,7 +35,7 @@ A Cone with a vertical axis and `bottom` < z < `top`, with vertex
 at (`xv`, `yv`, `zv`) and slope m with 
 sqrt((x - xv)^2 + (y - yv)^2) = m (z - zv).
 """
-struct Cone <: Shape
+struct Cone <: AbstractShape
     bottom::Float64
     top::Float64
 
@@ -50,31 +50,31 @@ end
 A plane at `z` that defines a shape containing points above 
 (if `up` is true) or below otherwise. 
 """
-struct Plane <: Shape
+struct Plane <: AbstractShape
     z::Float64
     up::Bool
 end
 
 
 """ Union of several shapes. """
-struct ShapeUnion{T<:Tuple} <: Shape
+struct ShapeUnion{T<:Tuple} <: AbstractShape
     shapes::T
 end
 
-Base.union(s::Shape...) = ShapeUnion(s)
+Base.union(s::AbstractShape...) = ShapeUnion(s)
 
 Empty() = ShapeUnion(())
 
 """ Intersection of several shapes. """
-struct ShapeIntersect{T<:Tuple} <: Shape
+struct ShapeIntersect{T<:Tuple} <: AbstractShape
     shapes::T
 end
 
 
-Base.intersect(s::Shape...) = ShapeIntersect(s)
+Base.intersect(s::AbstractShape...) = ShapeIntersect(s)
 
 """ Shape1 - Shape2. """
-struct ShapeSubstract{S1,S2} <: Shape
+struct ShapeSubstract{S1,S2} <: AbstractShape
     shape1::S1
     shape2::S2
 end
@@ -83,17 +83,17 @@ shapediff(s1, s2) = ShapeSubstract(s1, s2)
 
 
 # Shortcuts for unions and substractiong
-Base.:-(s1::Shape, s2::Shape) = shapediff(s1, s2)
-Base.:+(s1::Shape, rest::Shape...) = union(s1, rest...)
+Base.:-(s1::AbstractShape, s2::AbstractShape) = shapediff(s1, s2)
+Base.:+(s1::AbstractShape, rest::AbstractShape...) = union(s1, rest...)
 
 
 """ Transformed shape after a transformation or shift. """
-struct TransformedShape{T<:AbstractAffineMap, S<:Shape} <: Shape
+struct TransformedShape{T<:AbstractAffineMap, S<:AbstractShape} <: AbstractShape
     trans::T
     inv::T
     shape::S
     function TransformedShape(trans::T, shape::S) where
-        {T<:AbstractAffineMap, S<:Shape}
+        {T<:AbstractAffineMap, S<:AbstractShape}
 
         inv_ = inv(trans)
         new{T, S}(trans, inv_, shape)

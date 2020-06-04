@@ -22,7 +22,7 @@ const Point = SVector{3, Float64}
 include("constants.jl")
 include("parameters.jl")
 include("mieparams.jl")
-
+include("sources.jl")
 include("composition.jl")
 include("absorption.jl")
 include("geometry.jl")
@@ -78,22 +78,27 @@ scatters(s::Null) = false
 scatters(s::Union{Rayleigh, Mie, Isotropic}) = true
 
 
-struct World{Tc,Td,Tcomp,Tabs <: AbstractAbsorber,N}
-    cloud::Tc
+struct World{Td <: AbstractShape, Ts <: AbstractSource,
+             Tc <: AbstractShape, Tcomp <: AbstractComposition,
+             Tabs <: AbstractAbsorber, N}
     domain::Td
+    source::Ts
+    cloud::Tc
     comp::Tcomp
     absorber::Tabs
     quadrule::Tuple{SVector{N,Float64}, SVector{N,Float64}}
 
-    function World(cloud::Tc, domain::Td, comp::Tcomp, absorb::Tabs,
-                   n::Int) where {Tc, Td, Tcomp, Tabs}
+    function World(domain::Td, source::Ts, cloud::Tc, comp::Tcomp, absorb::Tabs,
+                   n::Int) where {Td, Ts, Tc, Tcomp, Tabs}
         x, w = gausslegendre(n)
         quadrule = (SVector{n}(x), SVector{n}(w))
-        new{Tc, Td, Tcomp, Tabs, n}(cloud, domain, comp, absorb, quadrule)
+        new{Td, Ts, Tc, Tcomp, Tabs, n}(domain, source, cloud, comp, absorb, quadrule)
     end
 
-    World(cloud, domain, comp) = World(cloud, domain, comp, NoAbsorption(), 3)
-    World(cloud, domain, comp, absorb) = World(cloud, domain, comp, absorb, 3)
+    World(domain, source, cloud, comp) =
+        World(domain, source, cloud, comp, NoAbsorption(), 3)
+    World(domain, source, cloud, comp, absorb) =
+        World(domain, source, cloud, comp, absorb, 3)
 end
 
 
@@ -139,6 +144,10 @@ function Observer(;position, fov, pixels, tsample, nsamples)
 end
 
 
+times(obs::Observer) = [obs.δt * (i - 0.5) for i in 1:size(obs.obs, 1)]
+timeline(obs::Observer) = dropdims(sum(obs.obs, dims=2), dims=2)
+image(obs::Observer) = dropdims(sum(obs.img, dims=3), dims=3)
+
 """
     projectpx(obs, px, H)
 
@@ -174,9 +183,9 @@ function main(params::Params, world::World, observers::Vector{Observer};
         @info "Running the MC simulation"
         run!(world, observers, params)
         
-        !isnothing(saveto) && save(saveto, observers, params)
-        p, observers
+        !isnothing(saveto) && save(saveto, world, observers, params)
     end
+    observers
 end
 
 
@@ -185,7 +194,7 @@ end
 
 Save the population and observations into a h5 file called `fname`.
 """
-function save(fname, observers::Vector{Observer}, params::Params)
+function save(fname, world::World, observers::Vector{Observer}, params::Params)
     
     h5open(fname, "w") do file
         g = g_create(file, "parameters")
@@ -201,38 +210,20 @@ function save(fname, observers::Vector{Observer}, params::Params)
             attrs(g)["altitude"] = obs.r[3]
             attrs(g)["shift"] = obs.r[1]
 
-            rsource = 0.5 * (params.source_a + params.source_b)
-            delay = norm(obs.r - rsource) / co.c
+            delay = norm(obs.r - centroid(world.source)) / co.c
             attrs(g)["delay"] = delay
             
-            g["t", args...] = [obs.δt * (i - 0.5) for i in 1:size(obs.obs, 1)]
+            g["t", args...] = times(obs)
 
             # The dropdims(sum(...)) is to sum over each thread
-            g["timeline", args...] = dropdims(sum(obs.obs, dims=2), dims=2)
-            g["image", args...] = dropdims(sum(obs.img, dims=3), dims=3)
+            g["timeline", args...] = timeline(obs)
+            g["image", args...] = image(obs)
             
         end
     end
     @info "Output written in $fname"
 end
 
-
-""" 
-    newphoton(params)
-
-Initialize a a new photon..
-"""
-function newphoton(params::Params)
-    @unpack source_a, source_b = params
-
-    ξ = trand()
-    r = (1 - ξ) * source_a + ξ * source_b
-    μ = randsphere()
-    t = 0.0
-    w = 1.0
-
-    r, μ, t, w
-end
 
 
 """
@@ -255,7 +246,7 @@ function run!(world::World, observers::Vector{Observer}, params::Params)
     
     Threads.@threads for tid in 1:Threads.nthreads()
         @inbounds for i in getrange(tid, N)
-            r, μ, t, w = newphoton(params)
+            r, μ, t, w = newphoton(world.source)
             
             for o in observers
                 observeone!(o, world, Isotropic(), r, μ, t, w, params)
@@ -399,21 +390,6 @@ function getrange(tid, n)
     from:to
 end
 
-
-""" 
-    randsphere()
-
-Sample points from the unitary sphere. 
-"""
-function randsphere()
-    ϕ = 2π * trand()
-    sinϕ, cosϕ = sincos(ϕ)
-    
-    u = 2 * trand() - 1
-    v = sqrt(1 - u^2)
-
-    @SVector [v * cosϕ, v * sinϕ, u]
-end
 
 
 """
