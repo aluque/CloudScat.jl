@@ -57,12 +57,12 @@ mie_ω0(comp::Homogeneous, r::Point, ::Nothing) = comp.ω0
   Create a Homogeneous composition instance for a given wavelength `λ`and
   fixed droplet density `n` and droplet radius `r`.
 """
-function Homogeneous(λ, n, radius; refindex=DEF_REFINDEX_FILE)
+function Homogeneous(λ, n, radius; refindex=DEF_REFINDEX_FILE, verbose=true)
     interp = m_interpolator(refindex)
     m = interp(λ)
     
     g, ω0, Qext = MieParams.compute(radius, λ, m)
-    @info "Mie parameters" g ω0 Qext
+    verbose && @info "Mie parameters" g ω0 Qext
     
     Homogeneous(n, radius, g, ω0, Qext)
 end

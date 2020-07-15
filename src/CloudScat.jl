@@ -16,6 +16,7 @@ using DelimitedFiles
 
 export Params, Point, World, Observer, Homogeneous, VariableNR
 export NoAbsorption, StratifiedAbsorption
+export time, photo, image, stime
 
 const Point = SVector{3, Float64}
 
@@ -162,9 +163,22 @@ function projectpx(obs::Observer, px::AbstractVector, H)
 end
 
 
+@with_kw struct Results
+    time::Vector{Float64}
+    photo::Vector{Float64}
+    image::Array{Float64, 2}
+    delay::Float64
+end
+
+time(r::Results) = r.time
+stime(r::Results) = time(r) .- r.delay
+photo(r::Results) = r.photo
+image(r::Results) = r.image
+
 
 function main(params::Params, world::World, observers::Vector{Observer};
-              saveto::Union{String,Nothing}=nothing)
+              saveto::Union{String,Nothing}=nothing,
+              verbose=true)
 
     function fmt(level, _module, group, id, file, line)
         return (:blue, format("{:<23}:", Dates.now()), "")
@@ -172,18 +186,32 @@ function main(params::Params, world::World, observers::Vector{Observer};
     logger = ConsoleLogger(meta_formatter=fmt)
 
     with_logger(logger) do
-        @info "CloudScat (c) Alejandro Luque IAA-CSIC, 2020"
-        @info "Mie solver by Olli Wilkman (https://github.com/dronir/MieScatter.jl)"
-        # Print a list of parameters
-        @info "Input parameters:" params
+        if verbose
+            @info "CloudScat (c) Alejandro Luque IAA-CSIC, 2020"
+            @info "Mie solver by Olli Wilkman (https://github.com/dronir/MieScatter.jl)"
+            # Print a list of parameters
+            @info "Input parameters:" params
+            
+            @info "Running with $(Threads.nthreads()) thread(s) (JULIA_NUM_THREADS)"
         
-        @info "Running with $(Threads.nthreads()) thread(s) (JULIA_NUM_THREADS)"
+            # Run the MC simulation
+            @info "Running the MC simulation"
+        end
+        run!(world, observers, params; verbose=verbose)
+
+        # Build the results object to return; one for each observer
+        results = map(observers) do obs
+            rsource = 0.5 * (params.source_a + params.source_b)
+            Results(time=[obs.δt * (i - 0.5) for i in 1:size(obs.obs, 1)],
+                    # The dropdims(sum(...)) is to sum over each thread
+                    photo=dropdims(sum(obs.obs, dims=2), dims=2),
+                    image=dropdims(sum(obs.img, dims=3), dims=3),
+                    delay=norm(obs.r - rsource) / co.c)
+        end
         
-        # Run the MC simulation
-        @info "Running the MC simulation"
-        run!(world, observers, params)
-        
-        !isnothing(saveto) && save(saveto, world, observers, params)
+        !isnothing(saveto) && save(saveto, observers, params)
+
+        results
     end
     observers
 end
@@ -231,17 +259,20 @@ end
 
 Run the MC simulation on a photon population and a collection of observers.
 """
-function run!(world::World, observers::Vector{Observer}, params::Params)    
+function run!(world::World, observers::Vector{Observer}, params::Params;
+              verbose=true)
     @unpack N = params
     
     # This is to allow quick debug runs without changing an input file.
     N ÷= parse(Int, get(ENV, "CLOUDSCAT_DEBUG_REDUCTION", "1"))
     
     set_zero_subnormals(true)
-    
-    prog = Progress(N, 5)
-    prog_lock = Threads.SpinLock()
 
+    if verbose
+        prog = Progress(N, 5)
+        prog_lock = Threads.SpinLock()
+    end
+    
     count = Threads.Atomic{Int}(0)
     
     Threads.@threads for tid in 1:Threads.nthreads()
@@ -254,9 +285,11 @@ function run!(world::World, observers::Vector{Observer}, params::Params)
 
             iterate(r, μ, t, w, world, observers, params)            
 
-            lock(prog_lock)
-            ProgressMeter.next!(prog)
-            unlock(prog_lock)
+            if verbose
+                lock(prog_lock)
+                ProgressMeter.next!(prog)
+                unlock(prog_lock)
+            end
         end
     end
 end
