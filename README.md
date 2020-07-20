@@ -4,6 +4,9 @@
 
 **CloudScat** is a Montecarlo code that predicts the signal observed by a satellite due to an optical source located inside or above a thundercloud.  It considers both Rayleigh (molecular) scattering and Mie scattering with cloud droplets.
 
+This code is used in the following article, currently under review for *Geoscientific Model Development*:
+
+- [Modeling lightning observations from space-based platforms (CloudScat.jl 1.0)](https://doi.org/10.5194/gmd-2020-161)
 
 ## Install
 
