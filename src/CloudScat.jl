@@ -201,7 +201,7 @@ function main(params::Params, world::World, observers::Vector{Observer};
 
         # Build the results object to return; one for each observer
         results = map(observers) do obs
-            rsource = 0.5 * (params.source_a + params.source_b)
+            rsource = centroid(world.source)
             Results(time=[obs.δt * (i - 0.5) for i in 1:size(obs.obs, 1)],
                     # The dropdims(sum(...)) is to sum over each thread
                     photo=dropdims(sum(obs.obs, dims=2), dims=2),
