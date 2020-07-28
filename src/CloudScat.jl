@@ -213,7 +213,6 @@ function main(params::Params, world::World, observers::Vector{Observer};
 
         results
     end
-    observers
 end
 
 
