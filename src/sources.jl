@@ -3,7 +3,9 @@
 ## the r (location), μ (direction), t (time) and w (weight) of a sampled photon
 ## for the source
 
-export PointImpulsiveSource, SegmentImpulsiveSource, PointLastingSource
+export PointImpulsiveSource, SegmentImpulsiveSource, PointLastingSource,
+    GaussianSegmentImpulsiveSource
+
 
 abstract type AbstractSource end
 
@@ -12,6 +14,11 @@ struct PointImpulsiveSource <: AbstractSource
 end
 
 struct SegmentImpulsiveSource <: AbstractSource
+    a::Point
+    b::Point
+end
+
+struct GaussianSegmentImpulsiveSource <: AbstractSource
     a::Point
     b::Point
 end
@@ -56,6 +63,16 @@ function newphoton(s::PointLastingSource)
     r, μ, t, w
 end
 
+function newphoton(s::GaussianSegmentImpulsiveSource)
+    c = 0.5 .* (s.a + s.b)
+    r = c .+ 0.5 * randn() .* (s.b - s.a)
+
+    t = 0.0
+    w = 1.0
+
+    r, μ, t, w
+end
+
 
 """
     centroid(s)
@@ -65,6 +82,7 @@ to any observer.
 """
 centroid(s::PointImpulsiveSource) = s.r0
 centroid(s::SegmentImpulsiveSource) = 0.5 * (s.a + s.b)
+centroid(s::GaussianSegmentImpulsiveSource) = 0.5 * (s.a + s.b)
 centroid(s::PointLastingSource) = s.r0
 
 
