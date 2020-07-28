@@ -66,6 +66,7 @@ end
 function newphoton(s::GaussianSegmentImpulsiveSource)
     c = 0.5 .* (s.a + s.b)
     r = c .+ 0.5 * randn() .* (s.b - s.a)
+    μ = randsphere()
 
     t = 0.0
     w = 1.0
