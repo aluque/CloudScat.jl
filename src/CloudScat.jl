@@ -215,7 +215,7 @@ Save the population and observations into a h5 file called `fname`.
 function save(fname, observers::Vector{Observer}, params::Params)
     
     h5open(fname, "w") do file
-        g = g_create(file, "parameters")
+        g = create_group(file, "parameters")
         for field in fieldnames(Params)
             attrs(g)[String(field)] = getfield(params, field)
         end
@@ -224,7 +224,7 @@ function save(fname, observers::Vector{Observer}, params::Params)
                 "deflate", 3)
 
         for (i, obs) in enumerate(observers)
-            g = g_create(file, format("obs{:05d}", i))
+            g = create_group(file, format("obs{:05d}", i))
             attrs(g)["altitude"] = obs.r[3]
             attrs(g)["shift"] = obs.r[1]
 
