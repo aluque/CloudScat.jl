@@ -217,26 +217,30 @@ function save(fname, observers::Vector{Observer}, params::Params)
     h5open(fname, "w") do file
         g = create_group(file, "parameters")
         for field in fieldnames(Params)
-            attrs(g)[String(field)] = getfield(params, field)
+            attributes(g)[String(field)] = getfield(params, field)
         end
 
-        args = ("shuffle", (),
-                "deflate", 3)
+        args = ()
 
         for (i, obs) in enumerate(observers)
             g = create_group(file, format("obs{:05d}", i))
-            attrs(g)["altitude"] = obs.r[3]
-            attrs(g)["shift"] = obs.r[1]
+            attributes(g)["altitude"] = obs.r[3]
+            attributes(g)["shift"] = obs.r[1]
 
             rsource = 0.5 * (params.source_a + params.source_b)
             delay = norm(obs.r - rsource) / co.c
-            attrs(g)["delay"] = delay
-            
-            g["t", args...] = [obs.δt * (i - 0.5) for i in 1:size(obs.obs, 1)]
+            @show delay
+            attributes(g)["delay"] = delay
+
+            g["t", shuffle = (), deflate = 3] =
+                [obs.δt * (i - 0.5) for i in 1:size(obs.obs, 1)]
 
             # The dropdims(sum(...)) is to sum over each thread
-            g["timeline", args...] = dropdims(sum(obs.obs, dims=2), dims=2)
-            g["image", args...] = dropdims(sum(obs.img, dims=3), dims=3)
+            g["timeline", shuffle = (), deflate = 3] =
+                dropdims(sum(obs.obs, dims=2), dims=2)
+            
+            g["image", shuffle = (), deflate = 3] =
+                dropdims(sum(obs.img, dims=3), dims=3)
             
         end
     end
