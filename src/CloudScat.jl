@@ -172,7 +172,7 @@ function main(params::Params, world::World, observers::Vector{Observer};
               verbose=true)
 
     function fmt(level, _module, group, id, file, line)
-        return (:blue, format("{:<23}:", Dates.now()), "")
+        return (:blue, format("{:<23}:", string(Dates.now())), "")
     end
     logger = ConsoleLogger(meta_formatter=fmt)
 
