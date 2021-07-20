@@ -40,6 +40,11 @@ def get_parser():
                         help="Output file",
                         default=None)
 
+    parser.add_argument("--field", "-f",
+                        action="store",
+                        help="Field to plot (image | depth), defaults to image",
+                        default="image")
+    
     return parser
 
 
@@ -51,7 +56,7 @@ def main():
     fp = h5py.File(args.input, "r")
     
     # Note that the image is transposed wrt the julia array.
-    img = np.array(fp[f"obs{obs:05d}/image"])
+    img = np.array(fp[f"obs{obs:05d}/%s" % args.field])
 
     plt.figure(f"obs{obs:05d}")
 

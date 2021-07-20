@@ -200,7 +200,7 @@ function main(params::Params, world::World, observers::Vector{Observer};
                     delay=norm(obs.r - rsource) / co.c)
         end
         
-        !isnothing(saveto) && save(saveto, observers, params)
+        !isnothing(saveto) && save(saveto, observers, world, params)
 
         results
     end
@@ -212,7 +212,7 @@ end
 
 Save the population and observations into a h5 file called `fname`.
 """
-function save(fname, observers::Vector{Observer}, params::Params)
+function save(fname, observers::Vector{Observer}, world::World, params::Params)
     
     h5open(fname, "w") do file
         g = create_group(file, "parameters")
@@ -241,7 +241,10 @@ function save(fname, observers::Vector{Observer}, params::Params)
             
             g["image", shuffle = (), deflate = 3] =
                 dropdims(sum(obs.img, dims=3), dims=3)
-            
+
+            g["depth", shuffle = (), deflate = 3] =
+                depthimg(obs, world, params)
+
         end
     end
     @info "Output written in $fname"
@@ -656,6 +659,25 @@ end
         I += h * Ip            
     end
     I
+end
+
+
+function depthimg(o::Observer, w::World, params::Params)
+    # This must be a large distance to be sure that the full cloud is closer
+    # than this to the observer.
+    INF_DIST = 1e6
+    nx, ny, _ = size(o.img)
+    dimg = zeros(nx, ny)
+    
+    for i in 1:nx, j in 1:ny
+        μ0 = @SVector [(i + 0.5) * o.δu - o.umax, (j + 0.5) * o.δu - o.umax , -1.0]
+        μ = μ0 ./ norm(μ0)
+        rfar = o.r .+ INF_DIST .* μ
+        dimg[i, j] = optpath(w.cloud, r -> miecollrate(r, w, params), rfar, o.r,
+                             w.quadrule)
+    end
+
+    dimg
 end
 
 
