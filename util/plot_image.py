@@ -85,7 +85,7 @@ def main():
     if args.log:
         kwargs['norm'] = LogNorm()
 
-    plt.pcolormesh(x, y, img, **kwargs)
+    plt.pcolormesh(x, y, img, shading='auto', **kwargs)
     cbar = plt.colorbar()
 
     plt.title(args.input)
