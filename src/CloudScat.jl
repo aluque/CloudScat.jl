@@ -168,7 +168,7 @@ image(r::Results) = r.image
 
 
 function main(params::Params, world::World, observers::Vector{Observer};
-              saveto::Union{String,Nothing}=nothing,
+              saveto::Union{String,Nothing}=nothing, savecallbacks=(),
               verbose=true)
 
     function fmt(level, _module, group, id, file, line)
@@ -200,7 +200,8 @@ function main(params::Params, world::World, observers::Vector{Observer};
                     delay=norm(obs.r - rsource) / co.c)
         end
         
-        !isnothing(saveto) && save(saveto, observers, world, params)
+        !isnothing(saveto) && save(saveto, observers, world, params,
+                                   savecallbacks)
 
         results
     end
@@ -212,7 +213,8 @@ end
 
 Save the population and observations into a h5 file called `fname`.
 """
-function save(fname, observers::Vector{Observer}, world::World, params::Params)
+function save(fname, observers::Vector{Observer}, world::World, params::Params,
+              callbacks=())
     
     h5open(fname, "w") do file
         g = create_group(file, "parameters")
@@ -246,8 +248,52 @@ function save(fname, observers::Vector{Observer}, world::World, params::Params)
                 depthimg(obs, world, params)
 
         end
+
+        for cb in callbacks
+            cb(file, observers, world, params)
+        end
+        
     end
+
+    
     @info "Output written in $fname"
+end
+
+
+""" Compute and save droplet density in a grid. `cloud` is a geometrical 
+    shape defining the cloud extent, `comp` is a composition.
+"""
+function cloudgrid(cloud, comp, axes)
+    ax, ay, az = axes
+
+    n = zeros((length(ax), length(ay), length(az)))
+    for (k, z) in enumerate(az), (j, y) in enumerate(ay), (i, x) in enumerate(ax)
+        r = @SVector [x, y, z]
+        inside(cloud, r) || continue
+
+        loc = probe(comp, r)
+        n[i, j, k] = density(comp, r, loc)
+    end
+
+    n
+end
+
+
+""" 
+Construct a saving callback to save a the save droplet density in a grid
+"""
+function savecloudgrid(axes...)
+    (file, observers, world, params) -> begin
+        g = create_group(file, "cloudgrid")
+        
+        n = cloudgrid(world.cloud, world.comp, axes)
+        
+        write(g, "density", n)
+        x, y, z = axes
+        write(g, "x", collect(x))
+        write(g, "y", collect(y))
+        write(g, "z", collect(z))
+    end
 end
 
 
