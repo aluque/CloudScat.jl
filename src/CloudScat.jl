@@ -66,7 +66,7 @@ end
 function reweight(s::Mie, w, wmin)
     w1 = s.ω0 * w
     if w1 < wmin
-        w1 = trand() < w1 ? 1.0 : 0.0
+        w1 = rand() < w1 ? 1.0 : 0.0
     end
     w1
 end
@@ -305,7 +305,7 @@ Initialize a a new photon..
 function newphoton(params::Params)
     @unpack source_a, source_b = params
 
-    ξ = trand()
+    ξ = rand()
     r = (1 - ξ) * source_a + ξ * source_b
     μ = randsphere()
     t = 0.0
@@ -491,10 +491,10 @@ end
 Sample points from the unitary sphere. 
 """
 function randsphere()
-    ϕ = 2π * trand()
+    ϕ = 2π * rand()
     sinϕ, cosϕ = sincos(ϕ)
     
-    u = 2 * trand() - 1
+    u = 2 * rand() - 1
     v = sqrt(1 - u^2)
 
     @SVector [v * cosϕ, v * sinϕ, u]
@@ -516,7 +516,7 @@ DEPRECATED: DOES NOT WORK
     νmax = νraymax + νmiemax(world.comp)
     
     # Select the optical depth to travel
-    τ = -log(trand())
+    τ = -log(rand())
 
     # To check whether we use collision rates in or outside the cloud
     # we test a point slightly ahead of the particle in its path.  This is
@@ -546,7 +546,7 @@ its direction `μ`.
     νmax = νraymax + νmiemax(world.comp)
     
     # Select the optical depth to travel
-    τ = -log(trand())
+    τ = -log(rand())
     τ / νmax
 end
 
@@ -573,7 +573,7 @@ Choose the type of scattering event, depending on the altitude `z`.
     
     νRay = νray_ground * exp(-r[3] / H)
     
-    ξ = trand() * νmax
+    ξ = rand() * νmax
 
     if ξ <= νMie
         g = mie_g(world.comp, r, loc)
@@ -601,8 +601,8 @@ NB: This function breaks down if μ is directed exactly along z.
     # Return false if the particle is absorbed
     w = reweight(scat, w, weight_min)
 
-    ϕ = 2π * trand()
-    cosθ = sample(scat, trand())
+    ϕ = 2π * rand()
+    cosθ = sample(scat, rand())
 
     turn(μ, cosθ, ϕ), w
 end
@@ -738,27 +738,8 @@ function constinside(geom, ν0)
 end
 
 
-const RNG = MersenneTwister[]
-
-@noinline function init_thread_rng()
-    # Allocate the random number generator on the thread's own heap lazily
-    # instead of the master thread heap to minimize memory conflict.
-    RNG[Threads.threadid()] = MersenneTwister(Threads.threadid())
-end
-
-
-@inline function trand()
-    @inbounds begin
-        tid = Threads.threadid()
-        isassigned(RNG, tid) || init_thread_rng()
-        return rand(RNG[tid])
-    end
-end
-
-
 function __init__()
     nth = Threads.nthreads()
-    resize!(RNG, nth)
     resize!(INTERFACE_LISTS, nth)
     
     # for tid in 1:nth
