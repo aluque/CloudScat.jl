@@ -183,7 +183,7 @@ function main(params::Params, world::World, observers::Vector{Observer};
             # Print a list of parameters
             @info "Input parameters:" params
             
-            @info "Running with $(Threads.nthreads()) thread(s) (JULIA_NUM_THREADS)"
+            @info "Running with $(Threads.nthreads()) thread(s)"
         
             # Run the MC simulation
             @info "Running the MC simulation"
@@ -336,15 +336,15 @@ function run!(world::World, observers::Vector{Observer}, params::Params;
     
     count = Threads.Atomic{Int}(0)
     
-    Threads.@threads for tid in 1:Threads.nthreads()
+    Threads.@threads :static for tid in 1:Threads.nthreads()
         @inbounds for i in getrange(tid, N)
             r, μ, t, w = newphoton(params)
             
             for o in observers
-                observeone!(o, world, Isotropic(), r, μ, t, w, params)
+                observeone!(o, world, Isotropic(), r, μ, t, w, params, tid)
             end
 
-            iterate(r, μ, t, w, world, observers, params)            
+            iterate(r, μ, t, w, world, observers, params, tid)
 
             if verbose
                 lock(prog_lock)
@@ -364,7 +364,7 @@ direction `μ`, time `t` and weight `w`.  The particles lives in `world` and
 may be detected by a list of `observers`.  `params` are the simulation parameters.
 """
 function iterate(r, μ, t, w, world::World, observers::Vector{Observer},
-                  params::Params)
+                  params::Params, tid)
     @unpack max_iter = params
     
     for it in 1:max_iter    
@@ -392,7 +392,7 @@ function iterate(r, μ, t, w, world::World, observers::Vector{Observer},
         # Accumulate observations
         if r[3] > params.zmin
             for o in observers
-                observeone!(o, world, scat, r, μ, t, w, params)
+                observeone!(o, world, scat, r, μ, t, w, params, tid)
             end
         end
         
@@ -412,7 +412,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
 """
 @inline @fastmath function observeone!(o::Observer, w::World,
                                        s::NonNull,
-                                       r, μ, t, weight, params::Params)
+                                       r, μ, t, weight, params::Params, tid)
     @unpack N, νray_ground, H = params
     # Distance to the observer
     sobs = norm(o.r - r)
@@ -425,7 +425,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     # Optical depth to the observer
     ν(r::Point) = miecollrate(r, w, params)
 
-    τmie = optpath(w.cloud, ν, r, o.r, w.quadrule)
+    τmie = optpath(w.cloud, ν, r, o.r, w.quadrule, tid)
 
     # Optical depth to the observer from Rayleigh scattering
     τray = νray_ground * H / μobs[3] * (exp(-r[3] / H) - exp(-o.r[3] / H))
@@ -447,8 +447,6 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     # Now find time of observation if the particle manages to escape
     tobs = t + sobs / co.c
 
-    tid = Threads.threadid()
-    
     # Update the observation curve
     ind = 1 + Int64(fld(tobs, o.δt))
     if ind <= size(o.obs, 1)
@@ -470,7 +468,7 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
     end
 end
 
-observeone!(o::Observer, w, ::Null, r, μ, t, weight, params::Params) = nothing
+observeone!(o::Observer, w, ::Null, r, μ, t, weight, params::Params, tid) = nothing
 
 
 """ Compute a range appropriate for this thread. 
@@ -647,20 +645,25 @@ Find a unitary vector deviated with inclination θ and azimuth
 end
 
 
+"""
+To sompute the optical path between an event and an observer we need a list of the geometrical
+interfaces that the ray traverses. We must store them somewhere to be able to sort and iterate so
+we pre-allocate these vectors.
+They are not allocated in initialization because allocating them inside each task may reduce
+cache collisions and improve performance slightly (I have not tested this though).
+"""
 const INTERFACE_LISTS = Vector{Float64}[]
 
-@noinline function init_interface_list()
+@noinline function init_interface_list(tid)
     # Allocate the list on the thread's own heap lazily
     # instead of the master thread heap to minimize memory conflict.
-    tid = Threads.threadid()
     INTERFACE_LISTS[tid] = Float64[0.0]
     INTERFACE_LISTS[tid]
 end
 
-@inline function get_interface_list()
+@inline function get_interface_list(tid)
     @inbounds begin
-        tid = Threads.threadid()
-        isassigned(INTERFACE_LISTS, tid) || return init_interface_list()
+        isassigned(INTERFACE_LISTS, tid) || return init_interface_list(tid)
         resize!(INTERFACE_LISTS[tid], 1)
         INTERFACE_LISTS[tid]
     end
@@ -670,8 +673,8 @@ end
 Compute the optical path between points `a` and `b` in a given geometry
 `geom` and with a position-dependent collision rate `ν`.
 """
-function optpath(geom, ν::Function, a::Point, b::Point, quadrule)
-    v = ListAccumulator(get_interface_list())
+function optpath(geom, ν::Function, a::Point, b::Point, quadrule, tid)
+    v = ListAccumulator(get_interface_list(tid))
 
     interfaces!(v, geom, a, b)
     sort!(v.list)
@@ -719,8 +722,10 @@ function depthimg(o::Observer, w::World, params::Params)
         μ0 = @SVector [(i + 0.5) * o.δu - o.umax, (j + 0.5) * o.δu - o.umax , -1.0]
         μ = μ0 ./ norm(μ0)
         rfar = o.r .+ INF_DIST .* μ
+
+        # tid = 1 here because we are not inside a parallel loop.
         dimg[i, j] = optpath(w.cloud, r -> miecollrate(r, w, params), rfar, o.r,
-                             w.quadrule)
+                             w.quadrule, 1)
     end
 
     dimg
