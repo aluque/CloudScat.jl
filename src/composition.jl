@@ -150,3 +150,29 @@ function m_interpolator(fname)
         complex(a, b)
     end
 end
+
+## It is cleaner to have the Mie fit in a separate type.  However, I am keeping untouched
+## the VariableNR type for backwards compatibility.
+"""
+Data to store a fit of Mie scattering parameters as function of droplet radius.
+"""
+struct MieFit{T}
+    # The assymetry parameter is fit as g = mr / (r + r0)
+    g0::T
+    r0::T
+
+    # The single-scattering albedo is fit as 1 - ω0 = ar
+    a::T
+
+    # The Extinction coefficient is fit as Qext = 2 + cr^-3/4
+    c::T
+end
+
+"""
+Compute a fit of the Mie scattering data at a given wavelength and for a refractive index contained
+in the file pointted to by refindex.
+"""
+function MieFit(λ; refindex=DEF_REFINDEX_FILE)
+    g0, r0, a, c = miefitparams(λ, refindex)
+    return MieFit(g0, r0, a, c)
+end
