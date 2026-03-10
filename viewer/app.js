@@ -15,7 +15,35 @@
     imageLog: false,
     lightcurveLog: false,
     currentTab: 'image',
+    theme: 'dark',
   };
+
+  // ── Theme colours ─────────────────────────────────────────────────────────────
+
+  var THEMES = {
+    dark: {
+      paper:    '#1a1a2e',
+      plotBg:   '#16213e',
+      plotBgImg:'#1a1a2e',
+      grid:     '#2a3a5e',
+      zeroline: '#2a3a5e',
+      axisText: '#8892a4',
+      tickText: '#e0e0e0',
+      line:     '#e94560',
+    },
+    light: {
+      paper:    '#f0f2f5',
+      plotBg:   '#ffffff',
+      plotBgImg:'#f0f2f5',
+      grid:     '#dce3ef',
+      zeroline: '#b0bccc',
+      axisText: '#5a6478',
+      tickText: '#1a1a2e',
+      line:     '#c0392b',
+    },
+  };
+
+  function tc() { return THEMES[state.theme]; }
 
   // ── DOM refs ─────────────────────────────────────────────────────────────────
 
@@ -39,6 +67,7 @@
   var plotImage      = document.getElementById('plot-image');
   var plotLc         = document.getElementById('plot-lc');
   var toast          = document.getElementById('toast');
+  var themeBtn       = document.getElementById('theme-btn');
 
   // ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -89,6 +118,17 @@
     // Observer selector
     obsSelector.addEventListener('change', function () {
       switchObserver(parseInt(obsSelector.value, 10));
+    });
+
+    // Theme toggle
+    themeBtn.addEventListener('click', function () {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      document.body.classList.toggle('theme-light', state.theme === 'light');
+      themeBtn.textContent = state.theme === 'dark' ? '\u2600' : '\u263D';
+      if (state.file) {
+        renderImage(true);
+        renderLightCurve(true);
+      }
     });
   }
 
@@ -407,13 +447,13 @@
       colorbar: {
         thickness: 14,
         len: 0.8,
-        tickfont: { color: '#e0e0e0', size: 11 },
-        tickcolor: '#e0e0e0',
-        outlinecolor: '#2a3a5e',
+        tickfont: { color: tc().tickText, size: 11 },
+        tickcolor: tc().tickText,
+        outlinecolor: tc().grid,
         exponentformat: 'power',
         title: {
           text: state.imageLog ? 'log₁₀(ph / sr / m² / src ph)' : 'ph / sr / m² / src ph',
-          font: { color: '#8892a4', size: 11 },
+          font: { color: tc().axisText, size: 11 },
         },
       },
     };
@@ -430,24 +470,24 @@
     }
 
     var layout = {
-      paper_bgcolor: '#1a1a2e',
-      plot_bgcolor:  '#1a1a2e',
+      paper_bgcolor: tc().plotBgImg,
+      plot_bgcolor:  tc().plotBgImg,
       margin: { t: 20, r: 90, b: 60, l: 90 },
       xaxis: {
-        title: { text: 'px', font: { color: '#8892a4' } },
-        color: '#8892a4',
-        gridcolor: '#2a3a5e',
-        zerolinecolor: '#2a3a5e',
+        title: { text: 'px', font: { color: tc().axisText } },
+        color: tc().axisText,
+        gridcolor: tc().grid,
+        zerolinecolor: tc().zeroline,
         exponentformat: 'power',
         scaleanchor: 'y',
         scaleratio: 1,
         range: savedX || undefined,
       },
       yaxis: {
-        title: { text: 'py', font: { color: '#8892a4' } },
-        color: '#8892a4',
-        gridcolor: '#2a3a5e',
-        zerolinecolor: '#2a3a5e',
+        title: { text: 'py', font: { color: tc().axisText } },
+        color: tc().axisText,
+        gridcolor: tc().grid,
+        zerolinecolor: tc().zeroline,
         exponentformat: 'power',
         autorange: savedY ? false : 'reversed',
         range: savedY || undefined,
@@ -496,28 +536,28 @@
       mode: 'lines',
       x: tMs,
       y: Array.from(tl),
-      line: { color: '#e94560', width: 1.5 },
+      line: { color: tc().line, width: 1.5 },
       name: obsKey,
     };
 
     var layout = {
-      paper_bgcolor: '#1a1a2e',
-      plot_bgcolor:  '#16213e',
+      paper_bgcolor: tc().paper,
+      plot_bgcolor:  tc().plotBg,
       margin: { t: 20, r: 50, b: 80, l: 140 },
       xaxis: {
-        title: { text: 'Time (ms)', font: { color: '#8892a4' }, standoff: 16 },
-        color: '#8892a4',
-        gridcolor: '#2a3a5e',
-        zerolinecolor: '#2a3a5e',
+        title: { text: 'Time (ms)', font: { color: tc().axisText }, standoff: 16 },
+        color: tc().axisText,
+        gridcolor: tc().grid,
+        zerolinecolor: tc().zeroline,
         exponentformat: 'power',
         range: (preserveRange && plotLc._fullLayout) ? plotLc._fullLayout.xaxis.range.slice() : undefined,
       },
       yaxis: (function() {
         var ax = {
-          title: { text: 'photons / m² / s / source photon', font: { color: '#8892a4' }, standoff: 28 },
-          color: '#8892a4',
-          gridcolor: '#2a3a5e',
-          zerolinecolor: '#2a3a5e',
+          title: { text: 'photons / m² / s / source photon', font: { color: tc().axisText }, standoff: 28 },
+          color: tc().axisText,
+          gridcolor: tc().grid,
+          zerolinecolor: tc().zeroline,
           exponentformat: 'power',
           type: state.lightcurveLog ? 'log' : 'linear',
         };

@@ -310,6 +310,38 @@
     }
     #toast.show { transform: translateX(-50%) translateY(0); }
 
+    /* Light theme overrides */
+    body.theme-light {
+      --bg: #f0f2f5;
+      --panel: #ffffff;
+      --accent: #dce3ef;
+      --accent2: #c4cfe3;
+      --text: #1a1a2e;
+      --text-muted: #5a6478;
+      --red: #c0392b;
+      --border: #ccd3e0;
+    }
+    body.theme-light #drop-inner { border-color: var(--border); }
+    body.theme-light #dropzone { background: var(--bg); }
+
+    /* Theme toggle button */
+    #theme-btn {
+      background: var(--accent);
+      border: 1px solid var(--accent2);
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+      line-height: 1;
+    }
+    #theme-btn:hover { background: var(--accent2); }
+
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -334,6 +366,7 @@
   <span id="fname-label"></span>
   <button id="open-btn">Open file&hellip;</button>
   <input type="file" id="file-input" accept=".h5,.hdf5,.hdf">
+  <button id="theme-btn" title="Toggle light/dark theme">&#9788;</button>
 </div>
 
 <!-- Main -->
