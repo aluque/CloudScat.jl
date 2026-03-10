@@ -7,69 +7,75 @@ using REPL
 
 Structure to contain all simulation parameters.
 """
-@with_kw_noshow struct Params @deftype Float64
+@kwdef struct Params{T, S}
     " Min z for observations"
-    zmin = 9 * co.kilo
+    zmin::T = 9 * co.kilo
     
-    # The source is assumed to be a line joining points a and b below
-    
-    "Location of point a of the source"
-    source_a::SVector{3, Float64} = @SVector [-2 * co.kilo, 2 * co.kilo,
-                                              13 * co.kilo]
+    "Initial segment point in default source"
+    source_a::SVector{3, T} = @SVector([-2 * co.kilo, 2 * co.kilo,
+                                              13 * co.kilo])
 
-    "Location of point b of the source"
-    source_b::SVector{3, Float64} = @SVector [-2 * co.kilo, 2 * co.kilo,
-                                              13 * co.kilo]
+    "End segment point for in default source"
+    source_b::SVector{3, T} = @SVector([-2 * co.kilo, 2 * co.kilo,
+                                              13 * co.kilo])
+                                             
+    "Photon source"
+    source::S = SegmentImpulsiveSource(source_a, source_b)
     
     "Initial number of photons"
     N::Int64 = 100000
 
     "Wavelength"
-    λ = 337 * co.nano
+    λ::T = 337 * co.nano
     
     "Minimum weight: below, particles are subjected to Russian roulette"
-    weight_min = 0.01
+    weight_min::T = 0.01
     
     "Cross-section for Rayleigh scattering"
-    σray = Ray.σ(λ)
+    σray::T = Ray.σ(λ)
     
     "Maximum number of collisions per photon"
     max_iter::Int64 = Int(1e9)
 
     "Air density at ground level (z = 0)"
-    nair = co.nair
+    nair::T = co.nair
 
     "Rayleigh scattering rate at ground level"
-    νray_ground = σray * nair
+    νray_ground::T = σray * nair
     
     "Atmospheric scale height"
-    H = 7.2 * co.kilo
+    H::T = 7.2 * co.kilo
     
     "Max. Rayleigh collision rate"
-    νraymax = νray_ground * exp(-zmin / H)
+    νraymax::T = νray_ground * exp(-zmin / H)
     
-    @assert λ > 0
-    @assert H > 0
-    @assert nair > 0
+    # @assert λ > 0
+    # @assert H > 0
+    # @assert nair > 0
 end
 
 
-function Base.show(io::IO, params::Params)
+function Base.show(io::IO, params::Params; cutoff = 40)
     print(io, "{")
     println(io)
 
     fwidth = maximum([length(String(field)) for field in fieldnames(Params)]) + 1
-    vwidth = maximum([length(repr(getfield(params, field)))
+    vwidth = maximum([min(cutoff, length(repr(getfield(params, field))))
                       for field in fieldnames(Params)]) + 1
     
     for field in fieldnames(Params)
         doc = string(REPL.fielddoc(Base.Docs.Binding(@__MODULE__, :Params), field))
         # Remove the Default: added by Parameters
-        res = findlast("Default:", doc)
-        doc = doc[1:res[1] - 1]
-        
-        printfmtln(io, "    {:<$(fwidth)s}= {:<$(vwidth)s} # {}",
-                   String(field), repr(getfield(params, field)), doc)
+        iof = IOBuffer()
+        show(iof, getfield(params, field))
+        s = String(take!(iof))
+        if length(s) > cutoff - 3
+            s = s[begin:cutoff - 3] * "..."
+        end
+        println(io, "    # ", strip(doc))
+        printfmtln(io, "    {:<$(fwidth)s}= {:<$(vwidth)s}",
+                   String(field), s, doc)
+        println(io)
     end
     
     println(io)

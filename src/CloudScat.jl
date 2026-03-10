@@ -27,6 +27,7 @@ include("mieparams.jl")
 include("composition.jl")
 include("absorption.jl")
 include("geometry.jl")
+include("sources.jl")
 #include("phasefuncs.jl")
 include("rayleigh.jl")
 
@@ -192,12 +193,11 @@ function main(params::Params, world::World, observers::Vector{Observer};
 
         # Build the results object to return; one for each observer
         results = map(observers) do obs
-            rsource = 0.5 * (params.source_a + params.source_b)
             Results(time=[obs.δt * (i - 0.5) for i in 1:size(obs.obs, 1)],
                     # The dropdims(sum(...)) is to sum over each thread
                     photo=dropdims(sum(obs.obs, dims=2), dims=2),
                     image=dropdims(sum(obs.img, dims=3), dims=3),
-                    delay=norm(obs.r - rsource) / co.c)
+                    delay=delay(params.source, obs.r))
         end
         
         !isnothing(saveto) && save(saveto, observers, world, params,
@@ -219,7 +219,14 @@ function save(fname, observers::Vector{Observer}, world::World, params::Params,
     h5open(fname, "w") do file
         g = create_group(file, "parameters")
         for field in fieldnames(Params)
-            attributes(g)[String(field)] = getfield(params, field)
+            if field == :source
+                for field2 in fieldnames(typeof(params.source))
+                    attributes(g)[String(field) * "." * String(field2)] = getfield(params.source,
+                                                                                   field2)
+                end
+            else
+                attributes(g)[String(field)] = getfield(params, field)
+            end
         end
 
         args = ()
@@ -229,10 +236,7 @@ function save(fname, observers::Vector{Observer}, world::World, params::Params,
             attributes(g)["altitude"] = obs.r[3]
             attributes(g)["shift"] = obs.r[1]
 
-            rsource = 0.5 * (params.source_a + params.source_b)
-            delay = norm(obs.r - rsource) / co.c
-            @show delay
-            attributes(g)["delay"] = delay
+            attributes(g)["delay"] = delay(params.source, obs.r)
 
             g["t", shuffle = (), deflate = 3] =
                 [obs.δt * (i - 0.5) for i in 1:size(obs.obs, 1)]
@@ -297,24 +301,6 @@ function savecloudgrid(axes...)
 end
 
 
-""" 
-    newphoton(params)
-
-Initialize a a new photon..
-"""
-function newphoton(params::Params)
-    @unpack source_a, source_b = params
-
-    ξ = rand()
-    r = (1 - ξ) * source_a + ξ * source_b
-    μ = randsphere()
-    t = 0.0
-    w = 1.0
-
-    r, μ, t, w
-end
-
-
 """
     run!(p, world, observers, interps, params)
 
@@ -338,7 +324,7 @@ function run!(world::World, observers::Vector{Observer}, params::Params;
     
     Threads.@threads :static for tid in 1:Threads.nthreads()
         @inbounds for i in getrange(tid, N)
-            r, μ, t, w = newphoton(params)
+            r, μ, t, w = newphoton(params.source)
             
             for o in observers
                 observeone!(o, world, Isotropic(), r, μ, t, w, params, tid)
@@ -482,21 +468,6 @@ function getrange(tid, n)
     from:to
 end
 
-
-""" 
-    randsphere()
-
-Sample points from the unitary sphere. 
-"""
-function randsphere()
-    ϕ = 2π * rand()
-    sinϕ, cosϕ = sincos(ϕ)
-    
-    u = 2 * rand() - 1
-    v = sqrt(1 - u^2)
-
-    @SVector [v * cosϕ, v * sinϕ, u]
-end
 
 
 """
