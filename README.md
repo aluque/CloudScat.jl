@@ -77,3 +77,11 @@ julia as e.g.
 ```bash
 > JULIA_NUM_THREADS=4 julia --color=yes sample.jl
 ```
+
+### View output files
+There is an AI-generated browser-based viewer for output files. You can use it without installation here:
+
+**https://aluque.github.io/CloudScat.jl/viewer/**
+
+
+
