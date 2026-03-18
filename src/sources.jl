@@ -73,7 +73,7 @@ function newphoton(s::PointImpulsiveSource)
 end
 
 function newphoton(s::SegmentImpulsiveSource)
-    ξ = trand()
+    ξ = rand()
     r = (1 - ξ) * s.a + ξ * s.b
     μ = randsphere()
     t = 0.0
