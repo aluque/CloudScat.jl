@@ -532,12 +532,15 @@ Choose the type of scattering event, depending on the altitude `z`.
 
     inside(world.domain, r) || return Null()
 
+    νMie = 0.0
     if inside(world.cloud, r)
         loc = probe(world.comp, r)
         Qext = mie_qext(world.comp, r, loc)
-        νMie =  Qext * π * radius(world.comp, r, loc)^2 * density(world.comp, r, loc)
-    else
-        νMie = 0.0
+        a = radius(world.comp, r, loc)
+        n = density(world.comp, r, loc)
+        if a > 0 && n > 0
+            νMie =  Qext * π * a^2 * n
+        end
     end
     
     νRay = νray_ground * exp(-r[3] / H)
@@ -588,7 +591,13 @@ function miecollrate(r::Point, w::World, params::Params)
 
     # Is the computation of ω0, g optimized out?
     Qext = mie_qext(w.comp, r, loc)
-    Qext * π * radius(w.comp, r, loc)^2 * density(w.comp, r, loc)
+    a = radius(w.comp, r, loc)
+    n = density(w.comp, r, loc)
+    if a > 0 && n > 0
+        Qext * π * radius(w.comp, r, loc)^2 * density(w.comp, r, loc)
+    else
+        zero(Qext)
+    end
 end
 
 
