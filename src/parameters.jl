@@ -7,20 +7,20 @@ using REPL
 
 Structure to contain all simulation parameters.
 """
-@kwdef struct Params{T, S}
+@kwdef struct Params{T, S, V <: AbstractVector{T}}
     " Min z for observations"
     zmin::T = 9 * co.kilo
     
     "Initial segment point in default source"
-    source_a::SVector{3, T} = @SVector([-2 * co.kilo, 2 * co.kilo,
-                                              13 * co.kilo])
+    source_a::V = @SVector([-2 * co.kilo, 2 * co.kilo,
+                            13 * co.kilo])
 
     "End segment point for in default source"
-    source_b::SVector{3, T} = @SVector([-2 * co.kilo, 2 * co.kilo,
-                                              13 * co.kilo])
+    source_b::V = @SVector([-2 * co.kilo, 2 * co.kilo,
+                            13 * co.kilo])
                                              
     "Photon source"
-    source::S = SegmentImpulsiveSource(source_a, source_b)
+    source::S = SegmentImpulsiveSource(SVector{3}(source_a), SVector{3}(source_b))
     
     "Initial number of photons"
     N::Int64 = 100000
