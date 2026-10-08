@@ -13,6 +13,12 @@
     currentObs: 0,
     paramAttrs: null,
     imageLog: false,
+    imageData: null,   // { data, nrows, ncols } of the image currently shown
+    cmap: 'Hot',
+    cmapReverse: false,
+    cmin: null,        // user colour limits in physical units; null = auto
+    cmax: null,
+    autoLimits: null,  // { min, max } used when cmin / cmax are null
     lightcurveLog: false,
     currentTab: 'image',
     theme: 'dark',
@@ -45,6 +51,42 @@
 
   function tc() { return THEMES[state.theme]; }
 
+  // ── Colormaps ─────────────────────────────────────────────────────────────────
+
+  // Evenly spaced stops; the matplotlib maps are sampled at 10 points.
+  function evenStops(colors) {
+    return colors.map(function (c, i) { return [i / (colors.length - 1), c]; });
+  }
+
+  var COLORMAPS = [
+    { name: 'Hot',     stops: [[0, '#000000'], [0.3, '#e60000'], [0.6, '#ffd200'], [1, '#ffffff']] },
+    { name: 'Inferno', stops: evenStops(['#000004', '#1b0c41', '#4a0c6b', '#781c6d', '#a52c60',
+                                         '#cf4446', '#ed6925', '#fb9b06', '#f7d13d', '#fcffa4']) },
+    { name: 'Magma',   stops: evenStops(['#000004', '#180f3d', '#440f76', '#721f81', '#9e2f7f',
+                                         '#cd4071', '#f1605d', '#fd9668', '#feca8d', '#fcfdbf']) },
+    { name: 'Plasma',  stops: evenStops(['#0d0887', '#46039f', '#7201a8', '#9c179e', '#bd3786',
+                                         '#d8576b', '#ed7953', '#fb9f3a', '#fdca26', '#f0f921']) },
+    { name: 'Viridis', stops: evenStops(['#440154', '#482878', '#3e4989', '#31688e', '#26828e',
+                                         '#1f9e89', '#35b779', '#6ece58', '#b5de2b', '#fde725']) },
+    { name: 'Cividis', stops: evenStops(['#00224e', '#123570', '#3b496c', '#575d6d', '#707173',
+                                         '#8a8678', '#a59c74', '#c3b369', '#e1cc55', '#fee838']) },
+    { name: 'Greys',   stops: evenStops(['#000000', '#ffffff']) },
+    { name: 'Jet',     stops: evenStops(['#000080', '#0000ff', '#0080ff', '#00ffff', '#80ff80',
+                                         '#ffff00', '#ff8000', '#ff0000', '#800000']) },
+  ];
+
+  function colormapStops(name, reverse) {
+    var cm = COLORMAPS.filter(function (m) { return m.name === name; })[0] || COLORMAPS[0];
+    if (!reverse) return cm.stops;
+    return cm.stops.map(function (s) { return [1 - s[0], s[1]]; }).reverse();
+  }
+
+  function cssGradient(stops) {
+    return 'linear-gradient(to right, ' + stops.map(function (s) {
+      return s[1] + ' ' + (s[0] * 100) + '%';
+    }).join(', ') + ')';
+  }
+
   // ── DOM refs ─────────────────────────────────────────────────────────────────
 
   var dropzone       = document.getElementById('dropzone');
@@ -60,9 +102,15 @@
   var paramsSection  = document.getElementById('params-section');
   var paramsTable    = document.getElementById('params-table');
   var tabBtns        = document.querySelectorAll('.tab-btn');
-  var logImageWrap   = document.getElementById('log-image-wrap');
-  var logImageCb     = document.getElementById('log-image-cb');
-  var logLcWrap      = document.getElementById('log-lc-wrap');
+  var cscaleSection  = document.getElementById('cscale-section');
+  var csScaleBtns    = document.querySelectorAll('#cs-scale button');
+  var csMin          = document.getElementById('cs-min');
+  var csMax          = document.getElementById('cs-max');
+  var csFitBtn       = document.getElementById('cs-fit');
+  var csAutoBtn      = document.getElementById('cs-auto');
+  var cmapGrid       = document.getElementById('cmap-grid');
+  var cmapReverseCb  = document.getElementById('cmap-reverse');
+  var logLcWrap     = document.getElementById('log-lc-wrap');
   var logLcCb        = document.getElementById('log-lc-cb');
   var plotImage      = document.getElementById('plot-image');
   var plotLc         = document.getElementById('plot-lc');
@@ -105,11 +153,35 @@
       });
     });
 
-    // Log scale toggles
-    logImageCb.addEventListener('change', function () {
-      state.imageLog = logImageCb.checked;
+    // Colour scale controls
+    buildCmapGrid();
+    csScaleBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        state.imageLog = btn.dataset.scale === 'log';
+        csScaleBtns.forEach(function (b) { b.classList.toggle('active', b === btn); });
+        if (state.file) renderImage(true);
+      });
+    });
+    csMin.addEventListener('change', function () { applyLimitInput(csMin, 'cmin'); });
+    csMax.addEventListener('change', function () { applyLimitInput(csMax, 'cmax'); });
+    [csMin, csMax].forEach(function (input) {
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') input.blur();   // blur fires 'change'
+      });
+    });
+    csAutoBtn.addEventListener('click', function () {
+      state.cmin = state.cmax = null;
+      csMin.value = csMax.value = '';
       if (state.file) renderImage(true);
     });
+    csFitBtn.addEventListener('click', fitLimitsToView);
+    cmapReverseCb.addEventListener('change', function () {
+      state.cmapReverse = cmapReverseCb.checked;
+      updateCmapSwatches();
+      if (state.file) renderImage(true);
+    });
+
+    // Light curve log scale toggle
     logLcCb.addEventListener('change', function () {
       state.lightcurveLog = logLcCb.checked;
       if (state.file) renderLightCurve(true);
@@ -187,6 +259,7 @@
 
     // Hide drop zone
     dropzone.classList.add('hidden');
+    cscaleSection.style.display = state.currentTab === 'image' ? 'block' : 'none';
 
     switchObserver(0);
   }
@@ -358,9 +431,9 @@
       pane.classList.toggle('active', pane.id === 'pane-' + tab);
     });
 
-    // Show relevant log toggle
-    logImageWrap.style.display = tab === 'image' ? 'flex' : 'none';
-    logLcWrap.style.display    = tab === 'lc'    ? 'flex' : 'none';
+    // Show the controls that apply to this tab
+    cscaleSection.style.display = (tab === 'image' && state.file) ? 'block' : 'none';
+    logLcWrap.style.display     = tab === 'lc' ? 'flex' : 'none';
 
     // Relayout the active plot so Plotly fills the new dimensions
     if (tab === 'image') {
@@ -391,51 +464,49 @@
 
     var nrows = shape[0];
     var ncols = shape[1];
+    state.imageData = { data: data, nrows: nrows, ncols: ncols };
+
+    var dataMin = Infinity;
+    var dataMax = -Infinity;
+    for (var i = 0; i < data.length; i++) {
+      if (data[i] < dataMin) dataMin = data[i];
+      if (data[i] > dataMax) dataMax = data[i];
+    }
+    var lim = colorLimits(dataMin, dataMax);
 
     // Build nested array (rows × cols), applying log scale if requested
     var z = [];
-    var globalMin = Infinity;
-    var globalMax = -Infinity;
-
-    if (state.imageLog) {
-      // Pre-compute log values
-      var zLog = [];
-      for (var r = 0; r < nrows; r++) {
-        var row = [];
-        for (var c = 0; c < ncols; c++) {
-          var v = data[r * ncols + c];
-          var lv = (v > 0) ? Math.log10(v) : NaN;
-          row.push(lv);
-          if (!isNaN(lv)) {
-            if (lv < globalMin) globalMin = lv;
-            if (lv > globalMax) globalMax = lv;
-          }
-        }
-        zLog.push(row);
+    for (var r = 0; r < nrows; r++) {
+      var row = new Array(ncols);
+      for (var c = 0; c < ncols; c++) {
+        var v = data[r * ncols + c];
+        row[c] = state.imageLog ? (v > 0 ? Math.log10(v) : NaN) : v;
       }
-      z = zLog;
-    } else {
-      for (var r = 0; r < nrows; r++) {
-        var row = [];
-        for (var c = 0; c < ncols; c++) {
-          var v = data[r * ncols + c];
-          row.push(v);
-          if (v < globalMin) globalMin = v;
-          if (v > globalMax) globalMax = v;
-        }
-        z.push(row);
-      }
+      z.push(row);
     }
 
+    var savedX = null, savedY = null;
+    if (preserveRange && plotImage._fullLayout) {
+      savedX = plotImage._fullLayout.xaxis.range.slice();
+      savedY = plotImage._fullLayout.yaxis.range.slice();
+    }
+
+    // Plot area for the ranges about to be shown, so that the first draw is
+    // already square; fitImageArea() corrects it after zooms and resizes.
+    var dom = squareDomains(savedX ? Math.abs(savedX[1] - savedX[0]) : ncols,
+                            savedY ? Math.abs(savedY[1] - savedY[0]) : nrows);
+    var cb = colorbarGeometry(dom.x, dom.y);
     var trace = {
       type: 'heatmap',
       z: z,
-      colorscale: 'Hot',
+      colorscale: colormapStops(state.cmap, state.cmapReverse),
       zsmooth: false,
       showscale: true,
       colorbar: {
         thickness: 14,
-        len: 0.8,
+        x: cb.x,
+        y: cb.y,
+        len: cb.len,
         tickfont: { color: tc().tickText, size: 11 },
         tickcolor: tc().tickText,
         outlinecolor: tc().grid,
@@ -447,17 +518,15 @@
       },
     };
 
-    if (state.imageLog && isFinite(globalMax)) {
-      trace.zmax = globalMax;
-      trace.zmin = globalMax - 4;
+    if (lim) {
+      trace.zauto = false;
+      trace.zmin = state.imageLog ? Math.log10(lim.min) : lim.min;
+      trace.zmax = state.imageLog ? Math.log10(lim.max) : lim.max;
     }
 
-    var savedX = null, savedY = null;
-    if (preserveRange && plotImage._fullLayout) {
-      savedX = plotImage._fullLayout.xaxis.range.slice();
-      savedY = plotImage._fullLayout.yaxis.range.slice();
-    }
-
+    // The axes are deliberately not linked with scaleanchor: Plotly would then
+    // force the zoom box to the current aspect ratio while dragging.  Square
+    // pixels are kept instead by sizing the axis domains (squareDomains).
     var layout = {
       paper_bgcolor: tc().plotBgImg,
       plot_bgcolor:  tc().plotBgImg,
@@ -468,8 +537,7 @@
         gridcolor: tc().grid,
         zerolinecolor: tc().zeroline,
         exponentformat: 'power',
-        scaleanchor: 'y',
-        scaleratio: 1,
+        domain: dom.x,
         range: savedX || undefined,
       },
       yaxis: {
@@ -478,6 +546,7 @@
         gridcolor: tc().grid,
         zerolinecolor: tc().zeroline,
         exponentformat: 'power',
+        domain: dom.y,
         autorange: savedY ? false : 'reversed',
         range: savedY || undefined,
       },
@@ -487,8 +556,178 @@
 
     Plotly.react(plotImage, [trace], layout, config);
 
-    // Show log toggle
-    logImageWrap.style.display = (state.currentTab === 'image') ? 'flex' : 'none';
+    if (!plotImage._fitHooked) {
+      plotImage.on('plotly_afterplot', fitImageArea);
+      plotImage._fitHooked = true;
+    }
+  }
+
+  // Axis domains (fractions of the plot area) that show an xspan × yspan
+  // data rectangle with square pixels, centred, as large as fits.
+  function squareDomains(xspan, yspan) {
+    var fl = plotImage._fullLayout;
+    var w = fl && fl._size ? fl._size.w : plotImage.clientWidth - 180;
+    var h = fl && fl._size ? fl._size.h : plotImage.clientHeight - 80;
+    var scale = Math.min(w / xspan, h / yspan);
+    var fx = Math.min(1, scale * xspan / w);
+    var fy = Math.min(1, scale * yspan / h);
+    return { x: [(1 - fx) / 2, (1 + fx) / 2], y: [(1 - fy) / 2, (1 + fy) / 2] };
+  }
+
+  // Colorbar placement that hugs the image area, in paper coordinates.  Keeps
+  // a readable length when the image is a thin horizontal strip.
+  function colorbarGeometry(xd, yd) {
+    return { x: xd[1], y: (yd[0] + yd[1]) / 2, len: Math.max(yd[1] - yd[0], 0.5) };
+  }
+
+  // After every draw (box zoom, reset, resize) resize the plot area to keep
+  // pixels square for the new ranges, then move the colorbar next to it.
+  // The tolerance checks stop the relayout / restyle from re-triggering
+  // themselves.
+  function fitImageArea() {
+    var fl = plotImage._fullLayout;
+    if (!fl || !fl.xaxis || !fl._size) return;
+    var xr = fl.xaxis.range, yr = fl.yaxis.range;
+    var dom = squareDomains(Math.abs(xr[1] - xr[0]), Math.abs(yr[1] - yr[0]));
+    var xd = fl.xaxis.domain, yd = fl.yaxis.domain;
+    if (Math.abs(xd[0] - dom.x[0]) > 1e-4 || Math.abs(xd[1] - dom.x[1]) > 1e-4 ||
+        Math.abs(yd[0] - dom.y[0]) > 1e-4 || Math.abs(yd[1] - dom.y[1]) > 1e-4) {
+      // Pass the ranges too, so that an autoranged view is not recomputed
+      Plotly.relayout(plotImage, {
+        'xaxis.domain': dom.x, 'yaxis.domain': dom.y,
+        'xaxis.range': xr.slice(), 'yaxis.range': yr.slice(),
+      });
+      return;   // the colorbar is synced on the next afterplot
+    }
+
+    var g = colorbarGeometry(xd, yd);
+    var cb = plotImage.data && plotImage.data[0] && plotImage.data[0].colorbar;
+    if (!cb) return;
+    if (Math.abs((cb.x || 0) - g.x) < 1e-3 &&
+        Math.abs((cb.y || 0) - g.y) < 1e-3 &&
+        Math.abs((cb.len || 0) - g.len) < 1e-3) return;
+    Plotly.restyle(plotImage, { 'colorbar.x': g.x, 'colorbar.y': g.y, 'colorbar.len': g.len }, [0]);
+  }
+
+  // ── Colour scale controls ─────────────────────────────────────────────────────
+
+  // Effective colour limits in physical units, combining user values with the
+  // automatic ones (full range, or 4 decades below the max in log scale).
+  // Flags inputs whose values cannot be used.
+  function colorLimits(dataMin, dataMax) {
+    var autoMin, autoMax;
+    if (state.imageLog) {
+      autoMax = dataMax;
+      autoMin = dataMax * 1e-4;
+    } else {
+      autoMin = dataMin;
+      autoMax = dataMax;
+    }
+    var valid = state.imageLog ? dataMax > 0 : isFinite(dataMin) && isFinite(dataMax);
+    state.autoLimits = valid ? { min: autoMin, max: autoMax } : null;
+
+    var userMin = state.cmin, userMax = state.cmax;
+    var minBad = userMin != null && state.imageLog && userMin <= 0;
+    if (minBad) userMin = null;
+
+    var lo = userMin != null ? userMin : autoMin;
+    var hi = userMax != null ? userMax : autoMax;
+    var orderBad = (userMin != null || userMax != null) && !(lo < hi);
+    if (orderBad) {
+      lo = autoMin;
+      hi = autoMax;
+    }
+
+    flagInput(csMin, minBad ? 'Log scale needs Min > 0; using auto.'
+                    : orderBad ? 'Min must be below Max; using auto.' : '');
+    flagInput(csMax, orderBad ? 'Min must be below Max; using auto.' : '');
+    csMin.placeholder = state.autoLimits ? 'auto (' + formatAuto(autoMin) + ')' : 'auto';
+    csMax.placeholder = state.autoLimits ? 'auto (' + formatAuto(autoMax) + ')' : 'auto';
+
+    if (!valid && userMin == null && userMax == null) return null;
+    return { min: lo, max: hi };
+  }
+
+  function flagInput(input, msg) {
+    input.classList.toggle('invalid', !!msg);
+    input.title = msg;
+  }
+
+  // Read a Min/Max input into state[key]; empty means auto.
+  function applyLimitInput(input, key) {
+    var s = input.value.trim().replace('−', '-');
+    if (s === '') {
+      state[key] = null;
+    } else {
+      var v = Number(s);
+      if (!isFinite(v)) {
+        input.value = state[key] != null ? formatAuto(state[key]) : '';
+        showError('Not a number: ' + s);
+        return;
+      }
+      state[key] = v;
+    }
+    if (state.file) renderImage(true);
+  }
+
+  // Set the limits to the data range of the pixels currently in view.  In log
+  // scale the min is kept within 4 decades of the max, as in auto mode, since
+  // Monte Carlo images contain a few pixels with vanishingly small weights.
+  function fitLimitsToView() {
+    var img = state.imageData;
+    var fl = plotImage._fullLayout;
+    if (!img || !fl || !fl.xaxis) return;
+    var xr = fl.xaxis.range, yr = fl.yaxis.range;
+    var c0 = Math.max(0, Math.ceil(Math.min(xr[0], xr[1])));
+    var c1 = Math.min(img.ncols - 1, Math.floor(Math.max(xr[0], xr[1])));
+    var r0 = Math.max(0, Math.ceil(Math.min(yr[0], yr[1])));
+    var r1 = Math.min(img.nrows - 1, Math.floor(Math.max(yr[0], yr[1])));
+
+    var lo = Infinity, hi = -Infinity;
+    for (var r = r0; r <= r1; r++) {
+      for (var c = c0; c <= c1; c++) {
+        var v = img.data[r * img.ncols + c];
+        if (state.imageLog && !(v > 0)) continue;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+    }
+    if (!isFinite(lo) || !isFinite(hi)) {
+      showError(state.imageLog ? 'No positive pixels in view.' : 'No pixels in view.');
+      return;
+    }
+    if (state.imageLog) lo = Math.max(lo, hi * 1e-4);
+    state.cmin = lo;
+    state.cmax = hi;
+    csMin.value = formatAuto(lo);
+    csMax.value = formatAuto(hi);
+    renderImage(true);
+  }
+
+  function buildCmapGrid() {
+    COLORMAPS.forEach(function (cm) {
+      var btn = document.createElement('button');
+      btn.className = 'cmap-btn' + (cm.name === state.cmap ? ' active' : '');
+      btn.dataset.name = cm.name;
+      btn.title = cm.name;
+      btn.innerHTML = '<span class="swatch"></span><span class="cmap-name">' + esc(cm.name) + '</span>';
+      btn.addEventListener('click', function () {
+        state.cmap = cm.name;
+        cmapGrid.querySelectorAll('.cmap-btn').forEach(function (b) {
+          b.classList.toggle('active', b === btn);
+        });
+        if (state.file) renderImage(true);
+      });
+      cmapGrid.appendChild(btn);
+    });
+    updateCmapSwatches();
+  }
+
+  function updateCmapSwatches() {
+    cmapGrid.querySelectorAll('.cmap-btn').forEach(function (btn) {
+      btn.querySelector('.swatch').style.background =
+        cssGradient(colormapStops(btn.dataset.name, state.cmapReverse));
+    });
   }
 
   // ── Light curve rendering ─────────────────────────────────────────────────────
@@ -596,7 +835,6 @@
   });
 
   // Initialize tab controls visibility
-  logImageWrap.style.display = 'none';
-  logLcWrap.style.display    = 'none';
+  logLcWrap.style.display = 'none';
 
 })();
