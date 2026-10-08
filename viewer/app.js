@@ -156,7 +156,6 @@
   function parseFile(f) {
     // Detect observer groups
     var keys = f.keys;
-    console.log('[CloudScat] top-level keys:', keys);
 
     var obsKeys = keys.filter(function (k) { return /^obs\d{5}$/.test(k); });
     obsKeys.sort();
@@ -174,15 +173,6 @@
       try {
         var pg = f.get('parameters');
         state.paramAttrs = pg ? pg.attrs : null;
-        console.log('[CloudScat] parameters attrs:', state.paramAttrs);
-        console.log('[CloudScat] parameters attrs keys:', state.paramAttrs ? Object.keys(state.paramAttrs) : 'null');
-        if (state.paramAttrs) {
-          var sampleKeys = ['N', 'λ', 'H', 'zmin'];
-          sampleKeys.forEach(function(k) {
-            var v = state.paramAttrs[k];
-            console.log('[CloudScat] attrs[' + k + '] =', v, '| type:', typeof v, '| constructor:', v != null && v.constructor ? v.constructor.name : 'n/a');
-          });
-        }
       } catch (e) {
         console.warn('[CloudScat] could not read parameters attrs:', e);
         state.paramAttrs = null;
@@ -233,7 +223,6 @@
     try {
       var og = state.file.get(obsKey);
       attrs = og ? og.attrs : null;
-      console.log('[CloudScat] obs attrs:', obsKey, attrs, attrs ? Object.keys(attrs) : 'null');
     } catch (e) {
       console.warn('[CloudScat] could not read obs attrs:', e);
     }
@@ -244,7 +233,7 @@
   // Render a parameter table from an attrs object, using a format spec array.
   // formatSpec: array of { key, label, convert, unit, decimals }
   function renderParamTable(attrs, formatSpec) {
-    if (!attrs) return '<tr><td colspan="2" style="color:#8892a4;font-style:italic">No attributes</td></tr>';
+    if (!attrs) return '<tr><td colspan="2" class="param-empty">No attributes</td></tr>';
 
     var rows = '';
     var shownKeys = {};
@@ -283,7 +272,7 @@
     });
 
     if (!rows) {
-      rows = '<tr><td colspan="2" style="color:#8892a4;font-style:italic">No attributes found</td></tr>';
+      rows = '<tr><td colspan="2" class="param-empty">No attributes found</td></tr>';
     }
     return rows;
   }

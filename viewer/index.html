@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudScat Viewer</title>
-  <script src="https://cdn.jsdelivr.net/npm/pako/dist/pako.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jsfive/dist/browser/hdf5.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.2.0/dist/pako.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsfive@0.4.2/dist/browser/hdf5.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.27.1/plotly.js"></script>
   <style>
     :root {
@@ -142,6 +142,12 @@
       color: var(--text);
       font-family: 'Consolas', 'SF Mono', monospace;
       font-size: 11px;
+    }
+    .param-table td.param-empty {
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 12px;
+      font-style: italic;
     }
 
     #obs-attrs-section { display: none; }
