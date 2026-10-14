@@ -19,7 +19,8 @@
     cmin: null,        // user colour limits in physical units; null = auto
     cmax: null,
     autoLimits: null,  // { min, max } used when cmin / cmax are null
-    lightcurveLog: false,
+    lightcurveLog: false,    // log intensity (y) axis
+    lightcurveLogX: false,   // log time (x) axis
     currentTab: 'image',
     theme: 'dark',
   };
@@ -110,8 +111,9 @@
   var csAutoBtn      = document.getElementById('cs-auto');
   var cmapGrid       = document.getElementById('cmap-grid');
   var cmapReverseCb  = document.getElementById('cmap-reverse');
-  var logLcWrap     = document.getElementById('log-lc-wrap');
-  var logLcCb        = document.getElementById('log-lc-cb');
+  var lcscaleSection = document.getElementById('lcscale-section');
+  var lcScaleXBtns   = document.querySelectorAll('#lc-scale-x button');
+  var lcScaleYBtns   = document.querySelectorAll('#lc-scale-y button');
   var plotImage      = document.getElementById('plot-image');
   var plotLc         = document.getElementById('plot-lc');
   var toast          = document.getElementById('toast');
@@ -155,12 +157,9 @@
 
     // Colour scale controls
     buildCmapGrid();
-    csScaleBtns.forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        state.imageLog = btn.dataset.scale === 'log';
-        csScaleBtns.forEach(function (b) { b.classList.toggle('active', b === btn); });
-        if (state.file) renderImage(true);
-      });
+    bindScaleControl(csScaleBtns, function (log) {
+      state.imageLog = log;
+      if (state.file) renderImage(true);
     });
     csMin.addEventListener('change', function () { applyLimitInput(csMin, 'cmin'); });
     csMax.addEventListener('change', function () { applyLimitInput(csMax, 'cmax'); });
@@ -181,9 +180,13 @@
       if (state.file) renderImage(true);
     });
 
-    // Light curve log scale toggle
-    logLcCb.addEventListener('change', function () {
-      state.lightcurveLog = logLcCb.checked;
+    // Light curve axis scales
+    bindScaleControl(lcScaleXBtns, function (log) {
+      state.lightcurveLogX = log;
+      if (state.file) renderLightCurve(true);
+    });
+    bindScaleControl(lcScaleYBtns, function (log) {
+      state.lightcurveLog = log;
       if (state.file) renderLightCurve(true);
     });
 
@@ -201,6 +204,16 @@
         renderImage(true);
         renderLightCurve(true);
       }
+    });
+  }
+
+  // Linear/Log segmented control: onChange(isLog) runs after a click
+  function bindScaleControl(buttons, onChange) {
+    buttons.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        buttons.forEach(function (b) { b.classList.toggle('active', b === btn); });
+        onChange(btn.dataset.scale === 'log');
+      });
     });
   }
 
@@ -259,7 +272,8 @@
 
     // Hide drop zone
     dropzone.classList.add('hidden');
-    cscaleSection.style.display = state.currentTab === 'image' ? 'block' : 'none';
+    cscaleSection.style.display  = state.currentTab === 'image' ? 'block' : 'none';
+    lcscaleSection.style.display = state.currentTab === 'lc' ? 'block' : 'none';
 
     switchObserver(0);
   }
@@ -432,8 +446,8 @@
     });
 
     // Show the controls that apply to this tab
-    cscaleSection.style.display = (tab === 'image' && state.file) ? 'block' : 'none';
-    logLcWrap.style.display     = tab === 'lc' ? 'flex' : 'none';
+    cscaleSection.style.display  = (tab === 'image' && state.file) ? 'block' : 'none';
+    lcscaleSection.style.display = (tab === 'lc' && state.file) ? 'block' : 'none';
 
     // Relayout the active plot so Plotly fills the new dimensions
     if (tab === 'image') {
@@ -770,6 +784,8 @@
       name: obsKey,
     };
 
+    var xType = state.lightcurveLogX ? 'log' : 'linear';
+
     var layout = {
       paper_bgcolor: tc().paper,
       plot_bgcolor:  tc().plotBg,
@@ -780,7 +796,10 @@
         gridcolor: tc().grid,
         zerolinecolor: tc().zeroline,
         exponentformat: 'power',
-        range: (preserveRange && plotLc._fullLayout) ? plotLc._fullLayout.xaxis.range.slice() : undefined,
+        type: xType,
+        // A range is only meaningful for the axis type it was taken from
+        range: (preserveRange && plotLc._fullLayout && plotLc._fullLayout.xaxis.type === xType)
+          ? plotLc._fullLayout.xaxis.range.slice() : undefined,
       },
       yaxis: (function() {
         var ax = {
@@ -809,9 +828,6 @@
     var config = { responsive: true, displaylogo: false };
 
     Plotly.react(plotLc, [trace], layout, config);
-
-    // Show log toggle if on lc tab
-    logLcWrap.style.display = (state.currentTab === 'lc') ? 'flex' : 'none';
   }
 
   // ── Error toast ───────────────────────────────────────────────────────────────
@@ -835,8 +851,5 @@
     Plotly.Plots.resize(plotImage);
     Plotly.Plots.resize(plotLc);
   });
-
-  // Initialize tab controls visibility
-  logLcWrap.style.display = 'none';
 
 })();
