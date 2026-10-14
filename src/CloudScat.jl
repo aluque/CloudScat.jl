@@ -14,7 +14,7 @@ using Interpolations
 using FastGaussQuadrature
 using DelimitedFiles
 
-export Params, Point, World, Observer, Homogeneous, VariableNR
+export Params, Point, World, Observer, Homogeneous, VariableNR, PointTo
 export NoAbsorption, StratifiedAbsorption
 export time, photo, image, stime
 
@@ -109,49 +109,130 @@ collects photons, building
  * a timeline of arriving photons (`obs`) with a time resolution `δt`
  * an image of the arriving directions of the photons (`img`) with cosine-angle
    resolution `δμ` and field-of-view `μmax`. 
-   
+
+The camera orientation is given by three orthonormal vectors `e = [e1, e2, e3]`:
+`e3` is the viewing direction (from the camera towards the scene) and `e1`, `e2`
+span the camera plane: pixel indices grow along `e1` (first index) and `e2`
+(second index).  For an image that is not mirrored, `e1 × e2` points towards
+the camera, i.e. `e2 = e1 × e3`.  The default, `[x̂, ŷ, -ẑ]`, is a camera
+looking downwards.
 """
 struct Observer
     r::SVector{3, Float64}   # Location of the observer
     δt::Float64              # Time-resolution of the detector
     δu::Float64              # Spatial resoution of the camera (in cosine space)
     umax::Float64            # Field-of-view in cosine space (i.e. max. observable mu)
+    
+    # Camera axes: e3 is the viewing direction and e1, e2 define the pixel grid
+    # in the camera plane (see the docstring above).
+    e::SVector{3, SVector{3, Float64}}
+        
     obs::Array{Float64, 2}   # Observations
     img::Array{Float64, 3}   # Image array
 end
 
+# Backwards-compatible constructor without camera axes (looking downwards).
+Observer(r, δt, δu, umax, obs::Array{Float64, 2}, img::Array{Float64, 3}) =
+    Observer(r, δt, δu, umax, getaxes(nothing, r), obs, img)
+
 
 """
-    Observer(obsdata)
+    PointTo(p)
 
-Create a observer structure from a dictionary of observer properties.
+Orient a camera so that it looks towards the point `p`.  The image's second
+axis (`e2`) points as much upwards as possible, so a horizontal camera sees
+the sky at large `py`.
 """
-function Observer(;position, fov, pixels, tsample, nsamples)
+struct PointTo
+    p::SVector{3, Float64}
+end
+
+
+"""
+    Observer(; position, fov, pixels, tsample, nsamples, axes=nothing)
+
+Create an observer.  `axes` sets the camera orientation and may be
+
+ * `nothing` (default): a camera looking downwards,
+ * `PointTo(p)`: a camera looking at the point `p`,
+ * a collection of three orthonormal vectors `[e1, e2, e3]` (see `Observer`).
+"""
+function Observer(;position, fov, pixels, tsample, nsamples, axes=nothing)
     sposition = SVector{3, Float64}(position)
     umax = tan(deg2rad(fov)) / sqrt(2)
     δu = 2 * umax / pixels
     nt = Threads.nthreads()
 
+    e = getaxes(axes, sposition)
+    
     obs = Observer(sposition,
                    tsample,
                    δu,
                    umax,
+                   e,
                    zeros(nsamples, nt),
                    zeros(pixels, pixels, nt))
 end
+
+# Explicit axes: any collection of three 3-vectors, which must be orthonormal.
+function getaxes(e, pos)
+    length(e) == 3 || throw(ArgumentError("axes must contain three vectors"))
+    se = SVector{3, SVector{3, Float64}}(SVector{3, Float64}.(collect(e)))
+    
+    for i in 1:3, j in 1:3
+        if abs(se[i] ⋅ se[j] - (i == j)) > 1e-6
+            throw(ArgumentError("camera axes must be orthonormal"))
+        end
+    end
+    return se
+end
+
+function getaxes(::Nothing, pos)
+    e1 = SA[1.0, 0, 0]
+    e2 = SA[0, 1.0, 0]
+    e3 = SA[0, 0, -1.0]
+    return SA[e1, e2, e3]
+end
+
+# Derive the camera axes from a point 
+function getaxes(pto::PointTo, pos)
+    (;p) = pto
+    dr = p - pos
+    drabs = norm(dr)
+    drabs > 0 || throw(ArgumentError("PointTo target coincides with the observer"))
+    
+    e3 = dr ./ drabs
+    eperp = sqrt(e3[1]^2 + e3[2]^2)
+
+    # e1 is horizontal (to the right when looking along e3); when looking
+    # straight up or down that is undefined and we fall back to x̂.
+    e1 = eperp > 1e-8 ? SA[e3[2], -e3[1], 0] ./ eperp : SA[1.0, 0, 0]
+    e2 = e1 × e3
+    return SA[e1, e2, e3]
+end
+
 
 
 """
     projectpx(obs, px, H)
 
   Project pixel coordinates into real space.  
-
+  
   Finds a pair `[x, y]` of positions that, at an altitude `H` would be projected
   into pixels `px = [xp, yp]` of the camera.  This is useful to simulate 
   observations with the same geometry as an existing observation.
+  Returns `[NaN, NaN]` if the line of sight of the pixel does not reach
+  altitude `H`.
 """
 function projectpx(obs::Observer, px::AbstractVector, H)
-    @. -(obs.r[3] - H) * (obs.umax - px * obs.δu) + obs.r[[1, 2]]
+    u = @. (px * obs.δu - obs.umax)
+
+    # Direction of the line of sight
+    d = obs.e[3] + u[1] * obs.e[1] + u[2] * obs.e[2]
+    lmbd = (H - obs.r[3]) / d[3]
+    lmbd > 0 || return SA[NaN, NaN]
+    
+    return SA[obs.r[1] + lmbd * d[1], obs.r[2] + lmbd * d[2]]
 end
 
 
@@ -235,6 +316,10 @@ function save(fname, observers::Vector{Observer}, world::World, params::Params,
             g = create_group(file, format("obs{:05d}", i))
             attributes(g)["altitude"] = obs.r[3]
             attributes(g)["shift"] = obs.r[1]
+
+            # Camera axes as a 3x3 matrix with columns e1, e2, e3 (rows in
+            # row-major readers such as h5py).
+            attributes(g)["axes"] = reduce(hcat, obs.e)
 
             attributes(g)["delay"] = delay(params.source, obs.r)
 
@@ -439,18 +524,25 @@ NOTE: Absorption is not considered here: it would simply add a factor ω₀
         @inbounds o.obs[ind, tid] += weight * f / o.δt
     end 
 
-    # Now update the image at the given pixels
-    # The minus are here because to be more user-friendly we invert the
-    # image formed in the sensor.
-    px = 1 + Int64(fld(-μobs[1] / μobs[3] + o.umax, o.δu))
-    py = 1 + Int64(fld(-μobs[2] / μobs[3] + o.umax, o.δu))
+    # Now update the image at the given pixels.
+    # cosθ is the cosine of the angle between the line of sight and the camera
+    # axis.  Photons coming from behind the camera are not imaged.
+    cosθ = -(o.e[3] ⋅ μobs)
+    cosθ > 0 || return
+
+    # Coordinates in the camera plane; these are -μobs projected along e3.
+    ux = -(o.e[1] ⋅ μobs) / cosθ
+    uy = -(o.e[2] ⋅ μobs) / cosθ
+    (abs(ux) < o.umax && abs(uy) < o.umax) || return
+    
+    px = 1 + Int64(fld(ux + o.umax, o.δu))
+    py = 1 + Int64(fld(uy + o.umax, o.δu))
     
     if 0 < px <= size(o.img)[1] && 0 < py <= size(o.img)[2]
         # The solid angle subtended by the pixel is roughly
-        # δu^2 * (cos θ)^3, where θ is the angle with the vertical.
-        # Actually cos θ = μobs[3].  The units would be here
-        # photons / sr / source photon.
-        @inbounds o.img[px, py, tid] += weight * f / (o.δu^2 * μobs[3]^3)
+        # δu^2 * (cos θ)^3, where θ is the angle with the camera axis.
+        # The units would be here photons / sr / source photon.
+        @inbounds o.img[px, py, tid] += weight * f / (o.δu^2 * cosθ^3)
     end
 end
 
@@ -699,7 +791,10 @@ function depthimg(o::Observer, w::World, params::Params)
     dimg = zeros(nx, ny)
     
     for i in 1:nx, j in 1:ny
-        μ0 = @SVector [(i + 0.5) * o.δu - o.umax, (j + 0.5) * o.δu - o.umax , -1.0]
+        # Line of sight through the centre of pixel (i, j)
+        u1 = (i - 0.5) * o.δu - o.umax
+        u2 = (j - 0.5) * o.δu - o.umax
+        μ0 = o.e[3] + u1 * o.e[1] + u2 * o.e[2]
         μ = μ0 ./ norm(μ0)
         rfar = o.r .+ INF_DIST .* μ
 
