@@ -547,7 +547,9 @@
         zerolinecolor: tc().zeroline,
         exponentformat: 'power',
         domain: dom.y,
-        autorange: savedY ? false : 'reversed',
+        // py grows along the camera's e2 axis (upwards for PointTo), so it
+        // increases upwards on screen.
+        autorange: savedY ? false : true,
         range: savedY || undefined,
       },
     };
